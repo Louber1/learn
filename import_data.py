@@ -3,12 +3,34 @@ import pandas as pd
 import re
 from pathlib import Path
 
+def extract_main_task(task_str):
+    """
+    Extrahiert Hauptaufgabe aus Teilaufgabe
+    Beispiele:
+    '1.1a' -> '1.1'
+    '1.1b' -> '1.1' 
+    '2a1' -> '2'
+    '2a6' -> '2'
+    '3.2c4' -> '3.2'
+    """
+    task_str = str(task_str).strip()
+    
+    # Entferne alles ab dem ersten Buchstaben (und was danach kommt)
+    # Das funktioniert für: 1.1a, 1.1b, 2a1, 2a6, 3.2c4, etc.
+    match = re.match(r'^(\d+(?:\.\d+)*)', task_str)
+    
+    if match:
+        return match.group(1)
+    else:
+        # Fallback: falls kein Pattern erkannt wird, gib original zurück
+        print(f"⚠️  Unbekanntes Aufgabenformat: {task_str}")
+        return task_str
+
 def init_database(db_path="physics_tasks.db"):
     """Initialisiert die Datenbank mit den Tabellen"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Tabellen erstellen
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS worksheets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,10 +66,6 @@ def init_database(db_path="physics_tasks.db"):
     conn.commit()
     conn.close()
 
-def extract_main_task(task_str):
-    """Extrahiert Hauptaufgabe aus Teilaufgabe (z.B. '1.1a' -> '1.1')"""
-    return re.sub(r'[a-zA-Z]+$', '', str(task_str))
-
 def clear_database(db_path="physics_tasks.db"):
     """Löscht alle Daten aus der Datenbank"""
     conn = sqlite3.connect(db_path)
@@ -60,6 +78,19 @@ def clear_database(db_path="physics_tasks.db"):
     conn.commit()
     conn.close()
 
+def test_extract_function():
+    """Testet die extract_main_task Funktion"""
+    test_cases = [
+        "1.1a", "1.1b", "1.2", "1.3",
+        "2a1", "2a2", "2a3", "2a4", "2a5", "2a6",
+        "3.2c4", "4b", "5.1.2a", "6"
+    ]
+    
+    print("🧪 Teste extract_main_task Funktion:")
+    for test in test_cases:
+        result = extract_main_task(test)
+        print(f"   '{test}' -> '{result}'")
+
 def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
     """Importiert CSV-Daten in die Datenbank"""
     
@@ -67,6 +98,13 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
     print(f"📖 Lese CSV-Datei: {csv_path}")
     df = pd.read_csv(csv_path, sep=';')
     print(f"   Gefunden: {len(df)} Zeilen")
+    
+    # Zeige einige Beispiele der Aufgabenextraktion
+    print("\n🔍 Beispiele der Aufgabenextraktion:")
+    sample_tasks = df['Aufgabe'].unique()[:10]  # Erste 10 unique Aufgaben
+    for task in sample_tasks:
+        main_task = extract_main_task(task)
+        print(f"   '{task}' -> '{main_task}'")
     
     # Datenbank leeren für sauberen Import
     clear_database(db_path)
@@ -76,7 +114,7 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
     
     try:
         # Worksheets einfügen
-        print("📋 Importiere Arbeitsblätter...")
+        print("\n📋 Importiere Arbeitsblätter...")
         worksheets = df[['Semester', 'Blatt']].drop_duplicates()
         
         for _, row in worksheets.iterrows():
@@ -92,7 +130,7 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
         conn.commit()
         
         # Tasks und Subtasks verarbeiten
-        print("📝 Verarbeite Aufgaben...")
+        print("\n📝 Verarbeite Aufgaben...")
         
         for index, row in df.iterrows():
             try:
@@ -136,7 +174,7 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
                     VALUES (?, ?, ?)
                 ''', (task_id, row['Aufgabe'], int(row['Punkte'])))
                 
-                if index % 10 == 0:  # Fortschritt anzeigen
+                if index % 20 == 0:  # Fortschritt anzeigen
                     print(f"   📄 Verarbeitet: {index + 1}/{len(df)} Zeilen")
                 
             except Exception as e:
@@ -147,7 +185,7 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
         conn.commit()
         
         # Total Points für Tasks berechnen
-        print("🔢 Berechne Gesamtpunkte...")
+        print("\n🔢 Berechne Gesamtpunkte...")
         cursor.execute('''
             UPDATE tasks 
             SET total_points = (
@@ -180,7 +218,7 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
     finally:
         conn.close()
 
-def show_database_content(db_path="physics_tasks.db"):
+def show_database_content(db_path="physics_tasks.db", limit=20):
     """Zeigt den Inhalt der Datenbank"""
     conn = sqlite3.connect(db_path)
     
@@ -197,39 +235,42 @@ def show_database_content(db_path="physics_tasks.db"):
         JOIN subtasks s ON t.id = s.task_id
         GROUP BY w.semester, w.sheet_number, t.task_number
         ORDER BY w.semester, w.sheet_number, t.task_number
+        LIMIT ?
     '''
     
     try:
-        df = pd.read_sql_query(query, conn)
-        print("\n📊 Datenbank-Inhalt:")
+        df = pd.read_sql_query(query, conn, params=[limit])
+        print(f"\n📊 Datenbank-Inhalt (erste {limit} Aufgaben):")
         print(df.to_string(index=False))
+        
+        # Zeige auch Statistik nach Punkten
+        stats_query = '''
+            SELECT 
+                t.total_points,
+                COUNT(*) as count
+            FROM tasks t
+            GROUP BY t.total_points
+            ORDER BY t.total_points
+        '''
+        stats_df = pd.read_sql_query(stats_query, conn)
+        print(f"\n📈 Aufgaben nach Punkten:")
+        print(stats_df.to_string(index=False))
+        
     except Exception as e:
         print(f"❌ Fehler beim Anzeigen der Datenbank: {e}")
     finally:
         conn.close()
 
-def debug_csv(csv_path):
-    """Debug-Funktion um CSV-Struktur zu prüfen"""
-    print(f"🔍 Debug CSV: {csv_path}")
-    df = pd.read_csv(csv_path, sep=';')
-    print(f"Spalten: {df.columns.tolist()}")
-    print(f"Erste 3 Zeilen:")
-    print(df.head(3))
-    print(f"Datentypen:")
-    print(df.dtypes)
-    print(f"Unique Semester: {df['Semester'].unique()}")
-    print(f"Unique Blatt: {df['Blatt'].unique()}")
-
 if __name__ == "__main__":
+    # Teste erst die Extraktionsfunktion
+    test_extract_function()
+    
     # Datenbank initialisieren
     init_database()
     
     # CSV importieren
     csv_file = "ExPhs1&2-Aufgaben-Punkte.csv"
     if Path(csv_file).exists():
-        # Debug CSV erst anzeigen
-        debug_csv(csv_file)
-        
         print("\n" + "="*50)
         import_csv_to_db(csv_file)
         show_database_content()
