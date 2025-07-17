@@ -15,6 +15,10 @@ class TaskService:
         """Wählt zufällige Aufgabe im Punktebereich"""
         return self.task_repo.get_random_task(min_points, max_points)
     
+    def get_task_counts_by_point_range(self, min_points: int, max_points: int) -> Dict[str, int]:
+        """Gibt Anzahl der Aufgaben im Punktebereich zurück"""
+        return self.task_repo.get_task_counts_by_point_range(min_points, max_points)
+    
     def start_attempt(self, task_id: int) -> int:
         """Startet einen neuen Lösungsversuch"""
         self.current_attempt_id = self.attempt_repo.create_attempt(task_id)

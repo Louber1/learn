@@ -6,23 +6,32 @@ class ConsoleUI:
     def __init__(self, task_service: TaskService):
         self.task_service = task_service
     
-    def display_task_info(self, task: Dict):
+    def display_task_info(self, task: Dict, task_counts: Optional[Dict[str, int]] = None, point_range: Optional[tuple[int, int]] = None):
         """Zeigt Aufgabeninformationen"""
         print(f"\n🎯 Aufgabe: Semester {task['semester']}, Blatt {task['sheet_number']}, Aufgabe {task['task_number']}")
         print(f"   Punkte: {task['total_points']}")
         print(f"   Status: {'🔄 Wiederholung' if task['is_repeat'] else '🆕 Neue Aufgabe'}")
         print(f"   Teilaufgaben: {len(task['subtasks'])}")
         
+        # Zeige Aufgaben-Statistiken für den gewählten Punktebereich
+        if task_counts and point_range:
+            min_points, max_points = point_range
+            if min_points == max_points:
+                range_text = f"{min_points}P"
+            else:
+                range_text = f"{min_points}-{max_points}P"
+            print(f"   📊 Punktebereich {range_text}: {task_counts['completed']}/{task_counts['total']} erledigt ({task_counts['remaining']} offen)")
+        
         for i, subtask in enumerate(task['subtasks'], 1):
             print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
     
-    def solve_task_interactive(self, task: Dict):
+    def solve_task_interactive(self, task: Dict, task_counts: Optional[Dict[str, int]] = None, point_range: Optional[tuple[int, int]] = None):
         """Interaktive Aufgabenlösung"""
         if not task:
             print("❌ Keine Aufgabe verfügbar!")
             return
         
-        self.display_task_info(task)
+        self.display_task_info(task, task_counts, point_range)
         
         choice = get_simple_input("\n[Enter] zum Starten, [s] zum Überspringen: ").lower()
         if choice == 's':

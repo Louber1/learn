@@ -32,7 +32,9 @@ def main():
                 min_points, max_points = point_range
                 task = task_service.get_random_task(min_points, max_points)
                 if task is not None:
-                    ui.solve_task_interactive(task)
+                    # Hole Aufgaben-Statistiken für den gewählten Punktebereich
+                    task_counts = task_service.get_task_counts_by_point_range(min_points, max_points)
+                    ui.solve_task_interactive(task, task_counts, (min_points, max_points))
                 else:
                     print("❌ Keine Aufgabe im gewählten Punktebereich gefunden!")
         

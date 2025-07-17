@@ -171,6 +171,37 @@ class TaskRepository:
         
         conn.commit()
         conn.close()
+    
+    def get_task_counts_by_point_range(self, min_points: int, max_points: int) -> Dict[str, int]:
+        """Gibt Anzahl der Aufgaben im Punktebereich zurück"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # Gesamtanzahl der Aufgaben im Punktebereich
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM tasks 
+            WHERE total_points >= ? AND total_points <= ?
+        ''', (min_points, max_points))
+        
+        total_tasks = cursor.fetchone()[0]
+        
+        # Anzahl der erledigten Aufgaben (times_done > 0)
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM tasks 
+            WHERE total_points >= ? AND total_points <= ? AND times_done > 0
+        ''', (min_points, max_points))
+        
+        completed_tasks = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            'total': total_tasks,
+            'completed': completed_tasks,
+            'remaining': total_tasks - completed_tasks
+        }
 
 
 class AttemptRepository:
