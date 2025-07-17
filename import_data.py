@@ -1,7 +1,7 @@
-import sqlite3
 import pandas as pd
 import re
 from pathlib import Path
+from database.models import DatabaseManager
 
 def extract_main_task(task_str):
     """
@@ -26,51 +26,13 @@ def extract_main_task(task_str):
         print(f"⚠️  Unbekanntes Aufgabenformat: {task_str}")
         return task_str
 
-def init_database(db_path="physics_tasks.db"):
-    """Initialisiert die Datenbank mit den Tabellen"""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS worksheets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            semester INTEGER NOT NULL,
-            sheet_number INTEGER NOT NULL,
-            UNIQUE(semester, sheet_number)
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            worksheet_id INTEGER NOT NULL,
-            task_number TEXT NOT NULL,
-            total_points INTEGER DEFAULT 0,
-            times_done INTEGER DEFAULT 0,
-            FOREIGN KEY (worksheet_id) REFERENCES worksheets(id),
-            UNIQUE(worksheet_id, task_number)
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS subtasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id INTEGER NOT NULL,
-            subtask_name TEXT NOT NULL,
-            points INTEGER NOT NULL,
-            FOREIGN KEY (task_id) REFERENCES tasks(id),
-            UNIQUE(task_id, subtask_name)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-def clear_database(db_path="physics_tasks.db"):
+def clear_database(db_manager: DatabaseManager):
     """Löscht alle Daten aus der Datenbank"""
-    conn = sqlite3.connect(db_path)
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
     
+    cursor.execute('DELETE FROM subtask_times')
+    cursor.execute('DELETE FROM solution_attempts')
     cursor.execute('DELETE FROM subtasks')
     cursor.execute('DELETE FROM tasks')
     cursor.execute('DELETE FROM worksheets')
@@ -91,7 +53,7 @@ def test_extract_function():
         result = extract_main_task(test)
         print(f"   '{test}' -> '{result}'")
 
-def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
+def import_csv_to_db(csv_path: str, db_manager: DatabaseManager):
     """Importiert CSV-Daten in die Datenbank"""
     
     # CSV einlesen
@@ -107,9 +69,10 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
         print(f"   '{task}' -> '{main_task}'")
     
     # Datenbank leeren für sauberen Import
-    clear_database(db_path)
+    print("\n🗑️  Leere Datenbank für sauberen Import...")
+    clear_database(db_manager)
     
-    conn = sqlite3.connect(db_path)
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
     
     try:
@@ -124,15 +87,15 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
                     VALUES (?, ?)
                 ''', (int(row['Semester']), int(row['Blatt'])))
                 print(f"   ✅ Semester {row['Semester']}, Blatt {row['Blatt']}")
-            except sqlite3.IntegrityError:
-                print(f"   ⚠️  Worksheet bereits vorhanden: Semester {row['Semester']}, Blatt {row['Blatt']}")
+            except Exception as e:
+                print(f"   ⚠️  Fehler bei Worksheet: Semester {row['Semester']}, Blatt {row['Blatt']} - {e}")
         
         conn.commit()
         
         # Tasks und Subtasks verarbeiten
         print("\n📝 Verarbeite Aufgaben...")
         
-        for index, row in df.iterrows():
+        for index, (_, row) in enumerate(df.iterrows()):
             try:
                 main_task = extract_main_task(row['Aufgabe'])
                 
@@ -218,9 +181,9 @@ def import_csv_to_db(csv_path, db_path="physics_tasks.db"):
     finally:
         conn.close()
 
-def show_database_content(db_path="physics_tasks.db", limit=20):
+def show_database_content(db_manager: DatabaseManager, limit: int = 20):
     """Zeigt den Inhalt der Datenbank"""
-    conn = sqlite3.connect(db_path)
+    conn = db_manager.get_connection()
     
     query = '''
         SELECT 
@@ -261,18 +224,64 @@ def show_database_content(db_path="physics_tasks.db", limit=20):
     finally:
         conn.close()
 
-if __name__ == "__main__":
+def show_progress_overview(db_manager: DatabaseManager):
+    """Zeigt Übersicht über den Lernfortschritt"""
+    conn = db_manager.get_connection()
+    
+    query = '''
+        SELECT 
+            t.total_points,
+            COUNT(*) as total_tasks,
+            SUM(CASE WHEN t.times_done = 0 THEN 1 ELSE 0 END) as new_tasks,
+            SUM(CASE WHEN t.times_done > 0 THEN 1 ELSE 0 END) as done_tasks,
+            ROUND(AVG(CAST(t.times_done AS FLOAT)), 2) as avg_repetitions
+        FROM tasks t
+        GROUP BY t.total_points
+        ORDER BY t.total_points
+    '''
+    
+    try:
+        df = pd.read_sql_query(query, conn)
+        print(f"\n📊 Lernfortschritt nach Punkten:")
+        print(f"{'Punkte':<8} {'Gesamt':<8} {'Offen':<8} {'Fertig':<8} {'⌀ Wiederh.':<12}")
+        print("-" * 50)
+        
+        for _, row in df.iterrows():
+            print(f"{row['total_points']:<8} {row['total_tasks']:<8} {row['new_tasks']:<8} {row['done_tasks']:<8} {row['avg_repetitions']:<12}")
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Anzeigen des Fortschritts: {e}")
+    finally:
+        conn.close()
+
+def main():
     # Teste erst die Extraktionsfunktion
     test_extract_function()
     
     # Datenbank initialisieren
-    init_database()
+    print("\n" + "="*50)
+    print("🔧 Initialisiere Datenbank...")
+    db_manager = DatabaseManager()
+    db_manager.init_database()
     
     # CSV importieren
     csv_file = "ExPhs1&2-Aufgaben-Punkte.csv"
+    
     if Path(csv_file).exists():
         print("\n" + "="*50)
-        import_csv_to_db(csv_file)
-        show_database_content()
+        print("📥 Starte CSV-Import...")
+        import_csv_to_db(csv_file, db_manager)
+        
+        print("\n" + "="*50)
+        print("📊 Datenbank-Übersicht:")
+        show_database_content(db_manager)
+        
+        print("\n" + "="*50)
+        show_progress_overview(db_manager)
+        
     else:
         print(f"❌ CSV-Datei '{csv_file}' nicht gefunden!")
+        print("   Stelle sicher, dass die Datei im gleichen Verzeichnis liegt.")
+
+if __name__ == "__main__":
+    main()
