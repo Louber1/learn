@@ -1,2 +1,3 @@
 physics_tasks.db
 .DS_Store
+**/__pycache__/
