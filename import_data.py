@@ -27,11 +27,11 @@ def extract_main_task(task_str):
         return task_str
 
 def clear_database(db_manager: DatabaseManager):
-    """Löscht alle Daten aus der Datenbank"""
+    """Löscht alle Daten aus der Datenbank und entfernt unnötige Tabellen"""
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
-    cursor.execute('DELETE FROM subtask_times')
+    # Lösche alle Daten
     cursor.execute('DELETE FROM solution_attempts')
     cursor.execute('DELETE FROM subtasks')
     cursor.execute('DELETE FROM tasks')
@@ -39,6 +39,7 @@ def clear_database(db_manager: DatabaseManager):
     
     conn.commit()
     conn.close()
+    print("✅ Database cleared")
 
 def test_extract_function():
     """Testet die extract_main_task Funktion"""

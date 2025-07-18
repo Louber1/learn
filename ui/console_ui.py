@@ -26,7 +26,7 @@ class ConsoleUI:
             print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
     
     def solve_task_interactive(self, task: Dict, task_counts: Optional[Dict[str, int]] = None, point_range: Optional[tuple[int, int]] = None):
-        """Interaktive Aufgabenlösung"""
+        """Interaktive Aufgabenlösung mit vereinfachtem Timer"""
         if not task:
             print("❌ Keine Aufgabe verfügbar!")
             return
@@ -40,37 +40,20 @@ class ConsoleUI:
         # Starte Lösungsversuch
         self.task_service.start_attempt(task['id'])
         
-        # Gehe durch alle Teilaufgaben
-        for i, subtask in enumerate(task['subtasks'], 1):
-            print(f"\n{'='*50}")
-            print(f"Teilaufgabe {i}/{len(task['subtasks'])}")
-            
-            sub_choice = get_simple_input(f"[Enter] für Timer, [s] überspringen, [q] Aufgabe beenden: ").lower()
-            
-            if sub_choice == 'q':
-                print("❌ Aufgabe abgebrochen")
-                self.task_service.current_attempt_id = None
-                self.task_service.subtask_times = {}
-                return
-            elif sub_choice == 's':
-                print("   ⏩ Teilaufgabe übersprungen")
-                continue
-            else:
-                result = self.task_service.time_subtask_interactive(subtask)
-                if result is None:  # Abgebrochen
-                    continue
+        # Starte Timer für die gesamte Aufgabe
+        total_time = self.task_service.time_task_interactive(task)
         
-        # Abschließen
-        if self.task_service.subtask_times:  # Nur wenn mindestens eine Teilaufgabe bearbeitet wurde
+        if total_time is not None:
+            # Frage ob Aufgabe als erledigt markiert werden soll
             finish_choice = get_simple_input("\n[Enter] um Aufgabe als erledigt zu markieren, [c] zum Abbrechen: ").lower()
             if finish_choice != 'c':
-                self.task_service.complete_attempt(task['id'])
+                self.task_service.complete_attempt(task['id'], total_time)
             else:
                 print("❌ Aufgabe abgebrochen")
                 self.task_service.current_attempt_id = None
-                self.task_service.subtask_times = {}
         else:
-            print("❌ Keine Teilaufgaben bearbeitet")
+            print("❌ Aufgabe abgebrochen")
+            self.task_service.current_attempt_id = None
     
     def show_statistics(self):
         """Zeigt Zeitstatistiken"""

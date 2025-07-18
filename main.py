@@ -15,7 +15,8 @@ def main():
     print("💡 Features:")
     print("   - Live-Timer mit Sekunden-Anzeige")
     print("   - Pause/Resume-Funktion")
-    print("   - Einzelne Zeitmessung pro Teilaufgabe")
+    print("   - Ein Timer pro gesamter Aufgabe")
+    print("   - Vereinfachter Workflow")
     print("   - Detaillierte Statistiken")
     
     while True:

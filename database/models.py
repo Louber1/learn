@@ -61,18 +61,6 @@ class DatabaseManager:
             )
         ''')
         
-        # Subtask times
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS subtask_times (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                attempt_id INTEGER NOT NULL,
-                subtask_id INTEGER NOT NULL,
-                time_seconds INTEGER NOT NULL,
-                completed BOOLEAN DEFAULT TRUE,
-                FOREIGN KEY (attempt_id) REFERENCES solution_attempts(id),
-                FOREIGN KEY (subtask_id) REFERENCES subtasks(id)
-            )
-        ''')
         
         conn.commit()
         conn.close()
@@ -242,18 +230,6 @@ class AttemptRepository:
         conn.commit()
         conn.close()
     
-    def save_subtask_time(self, attempt_id: int, subtask_id: int, time_seconds: int):
-        """Speichert die Zeit für eine Teilaufgabe"""
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            INSERT INTO subtask_times (attempt_id, subtask_id, time_seconds)
-            VALUES (?, ?, ?)
-        ''', (attempt_id, subtask_id, time_seconds))
-        
-        conn.commit()
-        conn.close()
 
     def get_statistics(self, task_id: Optional[int] = None) -> List[Tuple]:
         """Holt Zeitstatistiken"""
@@ -264,12 +240,9 @@ class AttemptRepository:
             cursor.execute('''
                 SELECT 
                     sa.attempt_date,
-                    sa.total_time_seconds,
-                    COUNT(st.id) as subtasks_timed
+                    sa.total_time_seconds
                 FROM solution_attempts sa
-                LEFT JOIN subtask_times st ON sa.id = st.attempt_id
                 WHERE sa.task_id = ?
-                GROUP BY sa.id
                 ORDER BY sa.attempt_date DESC
             ''', (task_id,))
         else:

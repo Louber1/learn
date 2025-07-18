@@ -9,7 +9,7 @@ class TaskService:
         self.task_repo = TaskRepository(db_manager)
         self.attempt_repo = AttemptRepository(db_manager)
         self.current_attempt_id: Optional[int] = None
-        self.subtask_times: Dict[int, int] = {}
+        self.current_timer: Optional[LiveTimer] = None
     
     def get_random_task(self, min_points: int, max_points: int) -> Optional[Dict]:
         """Wählt zufällige Aufgabe im Punktebereich"""
@@ -22,25 +22,28 @@ class TaskService:
     def start_attempt(self, task_id: int) -> int:
         """Startet einen neuen Lösungsversuch"""
         self.current_attempt_id = self.attempt_repo.create_attempt(task_id)
-        self.subtask_times = {}
         print(f"⏱️  Lösungsversuch gestartet (ID: {self.current_attempt_id})")
         return self.current_attempt_id
     
-    def time_subtask_interactive(self, subtask: Dict) -> Optional[int]:
-        """Interaktive Zeitmessung mit Live-Timer und Pause-Funktion"""
-        print(f"\n📝 Teilaufgabe: {subtask['name']} ({subtask['points']} Punkte)")
-        print("   Steuerung:")
+    def time_task_interactive(self, task: Dict) -> Optional[int]:
+        """Interaktive Zeitmessung für die gesamte Aufgabe"""
+        print(f"\n🎯 Aufgabe: {task['task_number']} ({task['total_points']} Punkte)")
+        print("📝 Teilaufgaben:")
+        for i, subtask in enumerate(task['subtasks'], 1):
+            print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
+        
+        print("\n⏱️  Timer-Steuerung:")
         print("   - [Enter] = Timer starten/stoppen")
         print("   - [Leertaste] = Pause/Fortsetzen")
         print("   - [q] = Abbrechen")
         
-        input("\n   [Enter] zum Starten...")
+        input("\n   [Enter] zum Starten der Zeitmessung...")
         
-        timer = LiveTimer()
-        timer.start()
+        self.current_timer = LiveTimer()
+        self.current_timer.start()
         
-        print("   💡 Während der Timer läuft:")
-        print("   - [Enter] = Stoppen")
+        print("\n   💡 Timer läuft! Arbeite an allen Teilaufgaben:")
+        print("   - [Enter] = Timer stoppen und Aufgabe beenden")
         print("   - [Leertaste] = Pause/Resume")
         print("   - [q] = Abbrechen")
         print()
@@ -51,68 +54,55 @@ class TaskService:
                     # Fallback für Systeme ohne termios
                     print("   [Enter] zum Stoppen...")
                     input()
-                    duration = timer.stop()
+                    duration = self.current_timer.stop()
                 else:
                     # Vollständige Steuerung
-                    while timer.is_running:
+                    while self.current_timer.is_running:
                         key = kb.get_key()
                         
                         if key == '\r' or key == '\n':  # Enter
                             break
                         elif key == ' ':  # Leertaste
-                            if timer.is_paused:
-                                timer.resume()
+                            if self.current_timer.is_paused:
+                                self.current_timer.resume()
                             else:
-                                timer.pause()
+                                self.current_timer.pause()
                         elif key == 'q':  # Quit
-                            timer.stop()
-                            print("\n   ❌ Teilaufgabe abgebrochen")
+                            self.current_timer.stop()
+                            print("\n   ❌ Aufgabe abgebrochen")
+                            self.current_timer = None
                             return None
                             
                         import time
                         time.sleep(0.1)
                     
-                    duration = timer.stop()
+                    duration = self.current_timer.stop()
                     
         except KeyboardInterrupt:
-            timer.stop()
+            if self.current_timer:
+                self.current_timer.stop()
             print("\n   ❌ Timer unterbrochen")
+            self.current_timer = None
             return None
         
-        print(f"\n   ✅ Teilaufgabe beendet! Zeit: {format_time(duration)}")
-        
-        # Speichere Zeit
-        self.subtask_times[subtask['id']] = duration
-        
+        print(f"\n   ✅ Aufgabe beendet! Gesamtzeit: {format_time(duration)}")
+        self.current_timer = None
         return duration
     
-    def complete_attempt(self, task_id: int):
-        """Schließt den Lösungsversuch ab und speichert alle Daten"""
+    def complete_attempt(self, task_id: int, total_time: int):
+        """Schließt den Lösungsversuch ab und speichert die Gesamtzeit"""
         if not self.current_attempt_id:
             print("❌ Kein aktiver Lösungsversuch!")
             return
         
-        total_time = sum(self.subtask_times.values())
-        
-        # Speichere Daten
+        # Speichere nur die Gesamtzeit
         self.attempt_repo.update_attempt_time(self.current_attempt_id, total_time)
-        
-        for subtask_id, time_sec in self.subtask_times.items():
-            self.attempt_repo.save_subtask_time(self.current_attempt_id, subtask_id, time_sec)
-        
         self.task_repo.mark_task_done(task_id)
         
         print(f"\n✅ Aufgabe abgeschlossen! Gesamtzeit: {format_time(total_time)}")
         
-        # Zeige Teilaufgaben-Aufschlüsselung
-        if len(self.subtask_times) > 1:
-            print("\n📊 Zeitaufschlüsselung:")
-            for subtask_id, time_sec in self.subtask_times.items():
-                print(f"   Teilaufgabe {subtask_id}: {format_time(time_sec)}")
-        
         # Reset für nächste Aufgabe
         self.current_attempt_id = None
-        self.subtask_times = {}
     
     def get_statistics(self, task_id: Optional[int] = None) -> List:
         """Holt Zeitstatistiken"""
