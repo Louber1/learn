@@ -56,14 +56,49 @@ class DatabaseManager:
                 task_id INTEGER NOT NULL,
                 attempt_date DATE NOT NULL,
                 total_time_seconds INTEGER,
+                status TEXT DEFAULT 'completed',
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (task_id) REFERENCES tasks(id)
             )
         ''')
         
+        # Migrate existing data if needed
+        self._migrate_existing_data(cursor)
         
         conn.commit()
         conn.close()
+    
+    def _migrate_existing_data(self, cursor):
+        """Migriert bestehende Daten für Rückwärtskompatibilität"""
+        # Check if status column exists
+        cursor.execute("PRAGMA table_info(solution_attempts)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'status' not in columns:
+            # Add status column
+            cursor.execute('''
+                ALTER TABLE solution_attempts 
+                ADD COLUMN status TEXT DEFAULT 'completed'
+            ''')
+            
+        if 'last_updated' not in columns:
+            # Add last_updated column (SQLite doesn't support CURRENT_TIMESTAMP in ALTER TABLE)
+            cursor.execute('''
+                ALTER TABLE solution_attempts 
+                ADD COLUMN last_updated TIMESTAMP
+            ''')
+        
+        # Migrate existing records
+        cursor.execute('''
+            UPDATE solution_attempts 
+            SET status = CASE 
+                WHEN total_time_seconds IS NOT NULL THEN 'completed'
+                ELSE 'cancelled'
+            END,
+            last_updated = COALESCE(created_at, CURRENT_TIMESTAMP)
+            WHERE status IS NULL OR status = 'completed'
+        ''')
 
 
 class TaskRepository:
@@ -196,15 +231,15 @@ class AttemptRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
     
-    def create_attempt(self, task_id: int) -> int:
+    def create_attempt(self, task_id: int, status: str = 'in_progress') -> int:
         """Erstellt einen neuen Lösungsversuch"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO solution_attempts (task_id, attempt_date)
-            VALUES (?, ?)
-        ''', (task_id, date.today()))
+            INSERT INTO solution_attempts (task_id, attempt_date, status)
+            VALUES (?, ?, ?)
+        ''', (task_id, date.today(), status))
         
         attempt_id = cursor.lastrowid
         if attempt_id is None:
@@ -230,6 +265,128 @@ class AttemptRepository:
         conn.commit()
         conn.close()
     
+    def update_attempt_status(self, attempt_id: int, status: str, total_time: Optional[int] = None):
+        """Aktualisiert Status und optional Zeit eines Versuchs"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        if total_time is not None:
+            cursor.execute('''
+                UPDATE solution_attempts 
+                SET status = ?, total_time_seconds = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (status, total_time, attempt_id))
+        else:
+            cursor.execute('''
+                UPDATE solution_attempts 
+                SET status = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (status, attempt_id))
+        
+        conn.commit()
+        conn.close()
+    
+    def auto_save_progress(self, attempt_id: int, current_time: int):
+        """Speichert aktuellen Fortschritt (Auto-Save)"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE solution_attempts 
+            SET total_time_seconds = ?, last_updated = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'in_progress'
+        ''', (current_time, attempt_id))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_incomplete_attempts(self) -> List[Dict]:
+        """Holt unvollständige Versuche für Recovery"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                sa.id,
+                sa.task_id,
+                sa.total_time_seconds,
+                sa.attempt_date,
+                sa.last_updated,
+                PRINTF('Sem%d Bl%d Aufg%s', w.semester, w.sheet_number, t.task_number) as task_info,
+                t.total_points
+            FROM solution_attempts sa
+            JOIN tasks t ON sa.task_id = t.id
+            JOIN worksheets w ON t.worksheet_id = w.id
+            WHERE sa.status = 'in_progress'
+            ORDER BY sa.last_updated DESC
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        attempts = []
+        for row in results:
+            attempts.append({
+                'attempt_id': row[0],
+                'task_id': row[1],
+                'elapsed_time': row[2] or 0,
+                'attempt_date': row[3],
+                'last_updated': row[4],
+                'task_info': row[5],
+                'total_points': row[6]
+            })
+        
+        return attempts
+    
+    def get_task_by_attempt(self, attempt_id: int) -> Optional[Dict]:
+        """Holt Task-Informationen für einen Versuch"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                t.id,
+                w.semester,
+                w.sheet_number,
+                t.task_number,
+                t.total_points,
+                t.times_done,
+                GROUP_CONCAT(s.id || ':' || s.subtask_name || ':' || s.points, '|') as subtasks_data
+            FROM solution_attempts sa
+            JOIN tasks t ON sa.task_id = t.id
+            JOIN worksheets w ON t.worksheet_id = w.id
+            JOIN subtasks s ON t.id = s.task_id
+            WHERE sa.id = ?
+            GROUP BY t.id
+        ''', (attempt_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return None
+        
+        # Parse subtasks
+        subtasks = []
+        if result[6]:  # subtasks_data
+            for subtask_data in result[6].split('|'):
+                parts = subtask_data.split(':')
+                subtasks.append({
+                    'id': int(parts[0]),
+                    'name': parts[1],
+                    'points': int(parts[2])
+                })
+        
+        return {
+            'id': result[0],
+            'semester': result[1],
+            'sheet_number': result[2],
+            'task_number': result[3],
+            'total_points': result[4],
+            'times_done': result[5],
+            'subtasks': subtasks,
+            'is_repeat': result[5] > 0
+        }
 
     def get_statistics(self, task_id: Optional[int] = None) -> List[Tuple]:
         """Holt Zeitstatistiken"""

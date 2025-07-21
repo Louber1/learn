@@ -15,9 +15,14 @@ def main():
     print("💡 Features:")
     print("   - Live-Timer mit Sekunden-Anzeige")
     print("   - Pause/Resume-Funktion")
+    print("   - Auto-Save alle 30 Sekunden 💾")
+    print("   - Session Recovery nach Unterbrechungen 🔄")
     print("   - Ein Timer pro gesamter Aufgabe")
     print("   - Vereinfachter Workflow")
     print("   - Detaillierte Statistiken")
+    
+    # Prüfe auf unterbrochene Sessions
+    recovery_handled = ui.show_recovery_options()
     
     while True:
         print("\n" + "="*50)

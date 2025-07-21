@@ -21,16 +21,30 @@ class TaskService:
     
     def start_attempt(self, task_id: int) -> int:
         """Startet einen neuen Lösungsversuch"""
-        self.current_attempt_id = self.attempt_repo.create_attempt(task_id)
+        self.current_attempt_id = self.attempt_repo.create_attempt(task_id, 'in_progress')
         print(f"⏱️  Lösungsversuch gestartet (ID: {self.current_attempt_id})")
         return self.current_attempt_id
     
-    def time_task_interactive(self, task: Dict) -> Optional[int]:
+    def resume_attempt(self, attempt_id: int) -> int:
+        """Setzt einen unterbrochenen Versuch fort"""
+        self.current_attempt_id = attempt_id
+        print(f"🔄 Lösungsversuch fortgesetzt (ID: {self.current_attempt_id})")
+        return self.current_attempt_id
+    
+    def _auto_save_callback(self, current_time: int):
+        """Callback für Auto-Save während Timer läuft"""
+        if self.current_attempt_id:
+            self.attempt_repo.auto_save_progress(self.current_attempt_id, current_time)
+    
+    def time_task_interactive(self, task: Dict, resume_from_seconds: int = 0) -> Optional[int]:
         """Interaktive Zeitmessung für die gesamte Aufgabe"""
         print(f"\n🎯 Aufgabe: {task['task_number']} ({task['total_points']} Punkte)")
         print("📝 Teilaufgaben:")
         for i, subtask in enumerate(task['subtasks'], 1):
             print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
+        
+        if resume_from_seconds > 0:
+            print(f"\n🔄 Fortsetzen von vorheriger Zeit: {format_time(resume_from_seconds)}")
         
         print("\n⏱️  Timer-Steuerung:")
         print("   - [Enter] = Timer starten/stoppen")
@@ -39,13 +53,18 @@ class TaskService:
         
         input("\n   [Enter] zum Starten der Zeitmessung...")
         
-        self.current_timer = LiveTimer()
-        self.current_timer.start()
+        # Timer mit Auto-Save und optionaler Fortsetzung
+        self.current_timer = LiveTimer(
+            auto_save_callback=self._auto_save_callback,
+            auto_save_interval=30
+        )
+        self.current_timer.start(resume_from_seconds)
         
         print("\n   💡 Timer läuft! Arbeite an allen Teilaufgaben:")
         print("   - [Enter] = Timer stoppen und Aufgabe beenden")
         print("   - [Leertaste] = Pause/Resume")
         print("   - [q] = Abbrechen")
+        print("   - 💾 = Auto-Save alle 30 Sekunden")
         print()
         
         try:
@@ -95,14 +114,34 @@ class TaskService:
             print("❌ Kein aktiver Lösungsversuch!")
             return
         
-        # Speichere nur die Gesamtzeit
-        self.attempt_repo.update_attempt_time(self.current_attempt_id, total_time)
+        # Aktualisiere Status und Zeit
+        self.attempt_repo.update_attempt_status(self.current_attempt_id, 'completed', total_time)
         self.task_repo.mark_task_done(task_id)
         
         print(f"\n✅ Aufgabe abgeschlossen! Gesamtzeit: {format_time(total_time)}")
         
         # Reset für nächste Aufgabe
         self.current_attempt_id = None
+    
+    def cancel_attempt(self):
+        """Bricht den aktuellen Versuch ab"""
+        if not self.current_attempt_id:
+            return
+        
+        # Markiere als abgebrochen
+        self.attempt_repo.update_attempt_status(self.current_attempt_id, 'cancelled')
+        print("❌ Lösungsversuch abgebrochen")
+        
+        # Reset
+        self.current_attempt_id = None
+    
+    def get_incomplete_attempts(self) -> List[Dict]:
+        """Holt unvollständige Versuche für Recovery"""
+        return self.attempt_repo.get_incomplete_attempts()
+    
+    def get_task_by_attempt(self, attempt_id: int) -> Optional[Dict]:
+        """Holt Task-Informationen für einen Versuch"""
+        return self.attempt_repo.get_task_by_attempt(attempt_id)
     
     def get_statistics(self, task_id: Optional[int] = None) -> List:
         """Holt Zeitstatistiken"""
