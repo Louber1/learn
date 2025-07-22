@@ -1,7 +1,10 @@
 import pandas as pd
 import re
+import sys
 from pathlib import Path
+from typing import Optional
 from database.models import DatabaseManager
+from exam_manager import ExamManager
 
 def extract_main_task(task_str):
     """
@@ -27,19 +30,20 @@ def extract_main_task(task_str):
         return task_str
 
 def clear_database(db_manager: DatabaseManager):
-    """Löscht alle Daten aus der Datenbank und entfernt unnötige Tabellen"""
+    """Löscht alle Daten aus der Datenbank (multi-exam aware)"""
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
-    # Lösche alle Daten
+    # Lösche alle Daten in der richtigen Reihenfolge (Foreign Key Constraints)
     cursor.execute('DELETE FROM solution_attempts')
     cursor.execute('DELETE FROM subtasks')
     cursor.execute('DELETE FROM tasks')
     cursor.execute('DELETE FROM worksheets')
+    cursor.execute('DELETE FROM exams')
     
     conn.commit()
     conn.close()
-    print("✅ Database cleared")
+    print("✅ Database cleared (including exams)")
 
 def test_extract_function():
     """Testet die extract_main_task Funktion"""
@@ -54,72 +58,164 @@ def test_extract_function():
         result = extract_main_task(test)
         print(f"   '{test}' -> '{result}'")
 
-def import_csv_to_db(csv_path: str, db_manager: DatabaseManager):
-    """Importiert CSV-Daten in die Datenbank"""
+def import_csv_to_db(csv_path: str, db_manager: DatabaseManager, clear_existing_exam: bool = False):
+    """Importiert CSV-Daten in die Datenbank - streamlined version"""
     
     # CSV einlesen
-    print(f"📖 Lese CSV-Datei: {csv_path}")
-    df = pd.read_csv(csv_path, sep=';')
-    print(f"   Gefunden: {len(df)} Zeilen")
+    print(f"📖 Reading CSV file: {csv_path}")
+    try:
+        df = pd.read_csv(csv_path, sep=';')
+        print(f"   Found: {len(df)} rows")
+    except Exception as e:
+        print(f"❌ Failed to read CSV file: {e}")
+        raise
     
-    # Zeige einige Beispiele der Aufgabenextraktion
-    print("\n🔍 Beispiele der Aufgabenextraktion:")
-    sample_tasks = df['Aufgabe'].unique()[:10]  # Erste 10 unique Aufgaben
+    # Auto-extract exam name from CSV
+    if 'Prüfung' not in df.columns:
+        print("❌ CSV must contain 'Prüfung' column")
+        raise ValueError("Missing 'Prüfung' column in CSV")
+    
+    exam_names = df['Prüfung'].unique()
+    if len(exam_names) > 1:
+        print(f"⚠️  Multiple exam names found in CSV: {exam_names}")
+        print("   Using the first one...")
+    
+    exam_name = exam_names[0]
+    print(f"📋 Auto-detected exam name: {exam_name}")
+    
+    # Show some examples of task extraction
+    print("\n🔍 Task extraction examples:")
+    sample_tasks = df['Aufgabe'].unique()[:10]  # First 10 unique tasks
     for task in sample_tasks:
         main_task = extract_main_task(task)
         print(f"   '{task}' -> '{main_task}'")
     
-    # Datenbank leeren für sauberen Import
-    print("\n🗑️  Leere Datenbank für sauberen Import...")
-    clear_database(db_manager)
+    # Use ExamManager to handle exam creation/lookup
+    exam_manager = ExamManager(db_manager)
+    
+    # Check if exam exists, create if not
+    exam = exam_manager.get_exam_by_name(exam_name)
+    if not exam:
+        print(f"📋 Creating new exam: {exam_name}")
+        exam_id = exam_manager.create_exam(exam_name, f"Imported from {csv_path}")
+    else:
+        exam_id = exam['id']
+        print(f"📋 Using existing exam: {exam_name} (ID: {exam_id})")
+    
+    if clear_existing_exam:
+        print("🗑️  Clearing existing data for this exam...")
+        _clear_exam_data(db_manager, exam_id)
+    
+    try:
+        # Import CSV data
+        _import_csv_data(csv_path, db_manager, exam_id)
+        
+    except Exception as e:
+        print(f"❌ Import failed: {e}")
+        raise
+
+def _clear_exam_data(db_manager: DatabaseManager, exam_id: int):
+    """Clears all data for a specific exam (but keeps the exam record)"""
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Delete in correct order
+        cursor.execute('''
+            DELETE FROM solution_attempts 
+            WHERE task_id IN (
+                SELECT t.id FROM tasks t
+                JOIN worksheets w ON t.worksheet_id = w.id
+                WHERE w.exam_id = ?
+            )
+        ''', (exam_id,))
+        
+        cursor.execute('''
+            DELETE FROM subtasks 
+            WHERE task_id IN (
+                SELECT t.id FROM tasks t
+                JOIN worksheets w ON t.worksheet_id = w.id
+                WHERE w.exam_id = ?
+            )
+        ''', (exam_id,))
+        
+        cursor.execute('''
+            DELETE FROM tasks 
+            WHERE worksheet_id IN (
+                SELECT id FROM worksheets WHERE exam_id = ?
+            )
+        ''', (exam_id,))
+        
+        cursor.execute('DELETE FROM worksheets WHERE exam_id = ?', (exam_id,))
+        
+        conn.commit()
+        print("✅ Existing exam data cleared")
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Failed to clear exam data: {e}")
+        raise
+    finally:
+        conn.close()
+
+def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
+    """Imports CSV data for a specific exam"""
+    print(f"📖 Reading CSV file: {csv_path}")
+    
+    try:
+        df = pd.read_csv(csv_path, sep=';')
+        print(f"   Found: {len(df)} rows")
+    except Exception as e:
+        print(f"❌ Failed to read CSV: {e}")
+        raise
     
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
     try:
-        # Worksheets einfügen
-        print("\n📋 Importiere Arbeitsblätter...")
+        # Import worksheets
+        print("\n📋 Importing worksheets...")
         worksheets = df[['Semester', 'Blatt']].drop_duplicates()
         
         for _, row in worksheets.iterrows():
             try:
                 cursor.execute('''
-                    INSERT INTO worksheets (semester, sheet_number)
-                    VALUES (?, ?)
-                ''', (int(row['Semester']), int(row['Blatt'])))
+                    INSERT OR IGNORE INTO worksheets (semester, sheet_number, exam_id)
+                    VALUES (?, ?, ?)
+                ''', (int(row['Semester']), int(row['Blatt']), exam_id))
                 print(f"   ✅ Semester {row['Semester']}, Blatt {row['Blatt']}")
             except Exception as e:
-                print(f"   ⚠️  Fehler bei Worksheet: Semester {row['Semester']}, Blatt {row['Blatt']} - {e}")
+                print(f"   ⚠️  Error with worksheet: Semester {row['Semester']}, Blatt {row['Blatt']} - {e}")
         
         conn.commit()
         
-        # Tasks und Subtasks verarbeiten
-        print("\n📝 Verarbeite Aufgaben...")
+        # Import tasks and subtasks
+        print("\n📝 Processing tasks...")
         
         for index, (_, row) in enumerate(df.iterrows()):
             try:
                 main_task = extract_main_task(row['Aufgabe'])
                 
-                # Worksheet ID holen
+                # Get worksheet ID
                 cursor.execute('''
                     SELECT id FROM worksheets 
-                    WHERE semester = ? AND sheet_number = ?
-                ''', (int(row['Semester']), int(row['Blatt'])))
+                    WHERE semester = ? AND sheet_number = ? AND exam_id = ?
+                ''', (int(row['Semester']), int(row['Blatt']), exam_id))
                 
                 worksheet_result = cursor.fetchone()
                 if worksheet_result is None:
-                    print(f"❌ Worksheet nicht gefunden: Semester {row['Semester']}, Blatt {row['Blatt']}")
+                    print(f"❌ Worksheet not found: Semester {row['Semester']}, Blatt {row['Blatt']}")
                     continue
                 
                 worksheet_id = worksheet_result[0]
                 
-                # Task einfügen (falls nicht vorhanden)
+                # Insert task (if not exists)
                 cursor.execute('''
                     INSERT OR IGNORE INTO tasks (worksheet_id, task_number, total_points)
                     VALUES (?, ?, 0)
                 ''', (worksheet_id, main_task))
                 
-                # Task ID holen
+                # Get task ID
                 cursor.execute('''
                     SELECT id FROM tasks 
                     WHERE worksheet_id = ? AND task_number = ?
@@ -127,29 +223,28 @@ def import_csv_to_db(csv_path: str, db_manager: DatabaseManager):
                 
                 task_result = cursor.fetchone()
                 if task_result is None:
-                    print(f"❌ Task nicht gefunden: {main_task}")
+                    print(f"❌ Task not found: {main_task}")
                     continue
                 
                 task_id = task_result[0]
                 
-                # Subtask einfügen
+                # Insert subtask
                 cursor.execute('''
                     INSERT OR IGNORE INTO subtasks (task_id, subtask_name, points)
                     VALUES (?, ?, ?)
                 ''', (task_id, row['Aufgabe'], int(row['Punkte'])))
                 
-                if index % 20 == 0:  # Fortschritt anzeigen
-                    print(f"   📄 Verarbeitet: {index + 1}/{len(df)} Zeilen")
-                
+                if index % 20 == 0:
+                    print(f"   📄 Processed: {index + 1}/{len(df)} rows")
+            
             except Exception as e:
-                print(f"❌ Fehler bei Zeile {index + 1}: {e}")
-                print(f"   Daten: {row.to_dict()}")
+                print(f"❌ Error at row {index + 1}: {e}")
                 continue
         
         conn.commit()
         
-        # Total Points für Tasks berechnen
-        print("\n🔢 Berechne Gesamtpunkte...")
+        # Calculate total points
+        print("\n🔢 Calculating total points...")
         cursor.execute('''
             UPDATE tasks 
             SET total_points = (
@@ -157,28 +252,44 @@ def import_csv_to_db(csv_path: str, db_manager: DatabaseManager):
                 FROM subtasks 
                 WHERE subtasks.task_id = tasks.id
             )
-        ''')
+            WHERE worksheet_id IN (
+                SELECT id FROM worksheets WHERE exam_id = ?
+            )
+        ''', (exam_id,))
         
         conn.commit()
         
-        # Statistik ausgeben
-        cursor.execute('SELECT COUNT(*) FROM worksheets')
+        # Show statistics
+        cursor.execute('''
+            SELECT COUNT(*) FROM worksheets WHERE exam_id = ?
+        ''', (exam_id,))
         worksheet_count = cursor.fetchone()[0]
         
-        cursor.execute('SELECT COUNT(*) FROM tasks')
+        cursor.execute('''
+            SELECT COUNT(*) FROM tasks 
+            WHERE worksheet_id IN (SELECT id FROM worksheets WHERE exam_id = ?)
+        ''', (exam_id,))
         task_count = cursor.fetchone()[0]
         
-        cursor.execute('SELECT COUNT(*) FROM subtasks')
+        cursor.execute('''
+            SELECT COUNT(*) FROM subtasks 
+            WHERE task_id IN (
+                SELECT t.id FROM tasks t
+                JOIN worksheets w ON t.worksheet_id = w.id
+                WHERE w.exam_id = ?
+            )
+        ''', (exam_id,))
         subtask_count = cursor.fetchone()[0]
         
-        print(f"\n✅ Import erfolgreich!")
-        print(f"   📋 {worksheet_count} Arbeitsblätter")
-        print(f"   📝 {task_count} Hauptaufgaben")
-        print(f"   📄 {subtask_count} Teilaufgaben")
+        print(f"\n✅ Import successful!")
+        print(f"   📋 {worksheet_count} worksheets")
+        print(f"   📝 {task_count} tasks")
+        print(f"   📄 {subtask_count} subtasks")
         
     except Exception as e:
-        print(f"❌ Fehler beim Import: {e}")
+        print(f"❌ Import failed: {e}")
         conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -256,33 +367,51 @@ def show_progress_overview(db_manager: DatabaseManager):
         conn.close()
 
 def main():
-    # Teste erst die Extraktionsfunktion
-    test_extract_function()
+    """Streamlined CSV import - one CSV per exam"""
     
-    # Datenbank initialisieren
-    print("\n" + "="*50)
-    print("🔧 Initialisiere Datenbank...")
+    # Check command line arguments
+    if len(sys.argv) < 2:
+        print("❌ Usage: python import_data.py <csv_file> [--clear-exam]")
+        print("   Example: python import_data.py ExPhs1&2-Aufgaben-Punkte.csv")
+        print("   Use --clear-exam to clear existing data for this exam before import")
+        sys.exit(1)
+    
+    csv_file = sys.argv[1]
+    clear_existing_exam = "--clear-exam" in sys.argv
+    
+    # Check if CSV file exists
+    if not Path(csv_file).exists():
+        print(f"❌ CSV file not found: {csv_file}")
+        sys.exit(1)
+    
+    print("=" * 60)
+    print("📥 STREAMLINED CSV IMPORT")
+    print("=" * 60)
+    
+    # Initialize database
+    print("🔧 Initializing database...")
     db_manager = DatabaseManager()
     db_manager.init_database()
     
-    # CSV importieren
-    csv_file = "ExPhs1&2-Aufgaben-Punkte.csv"
-    
-    if Path(csv_file).exists():
-        print("\n" + "="*50)
-        print("📥 Starte CSV-Import...")
-        import_csv_to_db(csv_file, db_manager)
+    # Import CSV
+    try:
+        print(f"\n📥 Starting import from: {csv_file}")
+        if clear_existing_exam:
+            print("⚠️  Will clear existing exam data before import")
         
-        print("\n" + "="*50)
-        print("📊 Datenbank-Übersicht:")
-        show_database_content(db_manager)
+        import_csv_to_db(csv_file, db_manager, clear_existing_exam)
         
-        print("\n" + "="*50)
-        show_progress_overview(db_manager)
+        print("\n" + "="*60)
+        print("✅ IMPORT SUCCESSFUL!")
+        print("="*60)
         
-    else:
-        print(f"❌ CSV-Datei '{csv_file}' nicht gefunden!")
-        print("   Stelle sicher, dass die Datei im gleichen Verzeichnis liegt.")
+        # Show brief overview
+        print("\n📊 Quick overview:")
+        show_database_content(db_manager, limit=10)
+        
+    except Exception as e:
+        print(f"\n❌ Import failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

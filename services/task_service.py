@@ -4,12 +4,44 @@ from timer.timer import LiveTimer
 from utils.keyboard import KeyboardListener, format_time
 
 class TaskService:
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, exam_id: Optional[int] = None):
         self.db_manager = db_manager
-        self.task_repo = TaskRepository(db_manager)
+        self.exam_id = exam_id
+        self.task_repo = TaskRepository(db_manager, exam_id)
         self.attempt_repo = AttemptRepository(db_manager)
         self.current_attempt_id: Optional[int] = None
         self.current_timer: Optional[LiveTimer] = None
+    
+    def set_exam_id(self, exam_id: int):
+        """Sets the current exam ID for filtering tasks"""
+        self.exam_id = exam_id
+        self.task_repo.set_exam_id(exam_id)
+    
+    def get_current_exam_info(self) -> Optional[Dict]:
+        """Gets information about the currently selected exam"""
+        if not self.exam_id:
+            return None
+        
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name, description, created_at
+            FROM exams
+            WHERE id = ?
+        ''', (self.exam_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return {
+                'id': result[0],
+                'name': result[1],
+                'description': result[2],
+                'created_at': result[3]
+            }
+        return None
     
     def get_random_task(self, min_points: int, max_points: int) -> Optional[Dict]:
         """Wählt zufällige Aufgabe im Punktebereich"""

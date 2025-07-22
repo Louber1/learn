@@ -14,13 +14,25 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # Worksheets
+        # Exams (new top-level table)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS exams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Worksheets (now references exams)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS worksheets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 semester INTEGER NOT NULL,
                 sheet_number INTEGER NOT NULL,
-                UNIQUE(semester, sheet_number)
+                exam_id INTEGER,
+                FOREIGN KEY (exam_id) REFERENCES exams(id),
+                UNIQUE(exam_id, semester, sheet_number)
             )
         ''')
         
@@ -102,16 +114,21 @@ class DatabaseManager:
 
 
 class TaskRepository:
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, exam_id: Optional[int] = None):
         self.db_manager = db_manager
+        self.exam_id = exam_id
+    
+    def set_exam_id(self, exam_id: int):
+        """Sets the current exam ID for filtering"""
+        self.exam_id = exam_id
     
     def get_random_task(self, min_points: int, max_points: int) -> Optional[Dict]:
         """Wählt zufällige Aufgabe im Punktebereich"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
-        # Erst nach neuen Aufgaben suchen
-        cursor.execute('''
+        # Build query with optional exam filtering
+        base_query = '''
             SELECT 
                 w.semester,
                 w.sheet_number,
@@ -124,8 +141,17 @@ class TaskRepository:
             JOIN tasks t ON w.id = t.worksheet_id
             JOIN subtasks s ON t.id = s.task_id
             WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done = 0
-            GROUP BY t.id
-        ''', (min_points, max_points))
+        '''
+        
+        params = [min_points, max_points]
+        if self.exam_id:
+            base_query += ' AND w.exam_id = ?'
+            params.append(self.exam_id)
+        
+        base_query += ' GROUP BY t.id'
+        
+        # Erst nach neuen Aufgaben suchen
+        cursor.execute(base_query, params)
         
         new_tasks = cursor.fetchall()
         
@@ -134,7 +160,7 @@ class TaskRepository:
             task = choice(new_tasks)
         else:
             # Falls keine neuen Aufgaben -> Wiederholung
-            cursor.execute('''
+            repeat_query = '''
                 SELECT 
                     w.semester,
                     w.sheet_number,
@@ -147,8 +173,16 @@ class TaskRepository:
                 JOIN tasks t ON w.id = t.worksheet_id
                 JOIN subtasks s ON t.id = s.task_id
                 WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done > 0
-                GROUP BY t.id
-            ''', (min_points, max_points))
+            '''
+            
+            repeat_params = [min_points, max_points]
+            if self.exam_id:
+                repeat_query += ' AND w.exam_id = ?'
+                repeat_params.append(self.exam_id)
+            
+            repeat_query += ' GROUP BY t.id'
+            
+            cursor.execute(repeat_query, repeat_params)
             
             repeat_tasks = cursor.fetchall()
             if not repeat_tasks:
@@ -200,22 +234,33 @@ class TaskRepository:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
-        # Gesamtanzahl der Aufgaben im Punktebereich
-        cursor.execute('''
+        # Build queries with optional exam filtering
+        total_query = '''
             SELECT COUNT(*) 
-            FROM tasks 
-            WHERE total_points >= ? AND total_points <= ?
-        ''', (min_points, max_points))
+            FROM tasks t
+            JOIN worksheets w ON t.worksheet_id = w.id
+            WHERE t.total_points >= ? AND t.total_points <= ?
+        '''
         
+        completed_query = '''
+            SELECT COUNT(*) 
+            FROM tasks t
+            JOIN worksheets w ON t.worksheet_id = w.id
+            WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done > 0
+        '''
+        
+        params = [min_points, max_points]
+        if self.exam_id:
+            total_query += ' AND w.exam_id = ?'
+            completed_query += ' AND w.exam_id = ?'
+            params.append(self.exam_id)
+        
+        # Gesamtanzahl der Aufgaben im Punktebereich
+        cursor.execute(total_query, params)
         total_tasks = cursor.fetchone()[0]
         
         # Anzahl der erledigten Aufgaben (times_done > 0)
-        cursor.execute('''
-            SELECT COUNT(*) 
-            FROM tasks 
-            WHERE total_points >= ? AND total_points <= ? AND times_done > 0
-        ''', (min_points, max_points))
-        
+        cursor.execute(completed_query, params)
         completed_tasks = cursor.fetchone()[0]
         
         conn.close()
