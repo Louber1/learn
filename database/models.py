@@ -123,74 +123,29 @@ class TaskRepository:
         self.exam_id = exam_id
     
     def get_random_task(self, min_points: int, max_points: int) -> Optional[Dict]:
-        """Wählt zufällige Aufgabe im Punktebereich"""
+        """Wählt zufällige Aufgabe im Punktebereich mit Round-basierter Logik"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
-        # Build query with optional exam filtering
-        base_query = '''
-            SELECT 
-                w.semester,
-                w.sheet_number,
-                t.id,
-                t.task_number,
-                t.total_points,
-                t.times_done,
-                GROUP_CONCAT(s.id || ':' || s.subtask_name || ':' || s.points, '|') as subtasks_data
-            FROM worksheets w
-            JOIN tasks t ON w.id = t.worksheet_id
-            JOIN subtasks s ON t.id = s.task_id
-            WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done = 0
-        '''
+        # Step 1: Find minimum completion level in the point range
+        min_completion_level = self._get_min_completion_level(cursor, min_points, max_points)
         
-        params = [min_points, max_points]
-        if self.exam_id:
-            base_query += ' AND w.exam_id = ?'
-            params.append(self.exam_id)
+        if min_completion_level is None:
+            conn.close()
+            return None
         
-        base_query += ' GROUP BY t.id'
+        # Step 2: Get all tasks at the minimum completion level
+        tasks_at_min_level = self._get_tasks_at_completion_level(
+            cursor, min_points, max_points, min_completion_level
+        )
         
-        # Erst nach neuen Aufgaben suchen
-        cursor.execute(base_query, params)
+        if not tasks_at_min_level:
+            conn.close()
+            return None
         
-        new_tasks = cursor.fetchall()
-        
-        if new_tasks:
-            from random import choice
-            task = choice(new_tasks)
-        else:
-            # Falls keine neuen Aufgaben -> Wiederholung
-            repeat_query = '''
-                SELECT 
-                    w.semester,
-                    w.sheet_number,
-                    t.id,
-                    t.task_number,
-                    t.total_points,
-                    t.times_done,
-                    GROUP_CONCAT(s.id || ':' || s.subtask_name || ':' || s.points, '|') as subtasks_data
-                FROM worksheets w
-                JOIN tasks t ON w.id = t.worksheet_id
-                JOIN subtasks s ON t.id = s.task_id
-                WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done > 0
-            '''
-            
-            repeat_params = [min_points, max_points]
-            if self.exam_id:
-                repeat_query += ' AND w.exam_id = ?'
-                repeat_params.append(self.exam_id)
-            
-            repeat_query += ' GROUP BY t.id'
-            
-            cursor.execute(repeat_query, repeat_params)
-            
-            repeat_tasks = cursor.fetchall()
-            if not repeat_tasks:
-                conn.close()
-                return None
-            
-            from random import choice
-            task = choice(repeat_tasks)
+        # Step 3: Randomly select from tasks at minimum completion level
+        from random import choice
+        task = choice(tasks_at_min_level)
         
         # Parse subtasks
         subtasks = []
@@ -215,6 +170,51 @@ class TaskRepository:
             'is_repeat': task[5] > 0
         }
     
+    def _get_min_completion_level(self, cursor, min_points: int, max_points: int) -> Optional[int]:
+        """Findet das minimale times_done Level im Punktebereich"""
+        query = '''
+            SELECT MIN(t.times_done)
+            FROM worksheets w
+            JOIN tasks t ON w.id = t.worksheet_id
+            WHERE t.total_points >= ? AND t.total_points <= ?
+        '''
+        
+        params = [min_points, max_points]
+        if self.exam_id:
+            query += ' AND w.exam_id = ?'
+            params.append(self.exam_id)
+        
+        cursor.execute(query, params)
+        result = cursor.fetchone()
+        return result[0] if result and result[0] is not None else None
+    
+    def _get_tasks_at_completion_level(self, cursor, min_points: int, max_points: int, completion_level: int) -> List:
+        """Holt alle Aufgaben mit einem bestimmten times_done Level"""
+        query = '''
+            SELECT 
+                w.semester,
+                w.sheet_number,
+                t.id,
+                t.task_number,
+                t.total_points,
+                t.times_done,
+                GROUP_CONCAT(s.id || ':' || s.subtask_name || ':' || s.points, '|') as subtasks_data
+            FROM worksheets w
+            JOIN tasks t ON w.id = t.worksheet_id
+            JOIN subtasks s ON t.id = s.task_id
+            WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done = ?
+        '''
+        
+        params = [min_points, max_points, completion_level]
+        if self.exam_id:
+            query += ' AND w.exam_id = ?'
+            params.append(self.exam_id)
+        
+        query += ' GROUP BY t.id'
+        
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    
     def mark_task_done(self, task_id: int):
         """Markiert Aufgabe als erledigt"""
         conn = self.db_manager.get_connection()
@@ -230,9 +230,22 @@ class TaskRepository:
         conn.close()
     
     def get_task_counts_by_point_range(self, min_points: int, max_points: int) -> Dict[str, int]:
-        """Gibt Anzahl der Aufgaben im Punktebereich zurück"""
+        """Gibt Anzahl der Aufgaben im Punktebereich zurück mit Round-Informationen"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
+        
+        # Get minimum completion level (current round)
+        min_completion_level = self._get_min_completion_level(cursor, min_points, max_points)
+        
+        if min_completion_level is None:
+            conn.close()
+            return {
+                'total': 0,
+                'completed': 0,
+                'remaining': 0,
+                'current_round': 1,
+                'tasks_at_current_level': 0
+            }
         
         # Build queries with optional exam filtering
         total_query = '''
@@ -249,10 +262,18 @@ class TaskRepository:
             WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done > 0
         '''
         
+        current_level_query = '''
+            SELECT COUNT(*) 
+            FROM tasks t
+            JOIN worksheets w ON t.worksheet_id = w.id
+            WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done = ?
+        '''
+        
         params = [min_points, max_points]
         if self.exam_id:
             total_query += ' AND w.exam_id = ?'
             completed_query += ' AND w.exam_id = ?'
+            current_level_query += ' AND w.exam_id = ?'
             params.append(self.exam_id)
         
         # Gesamtanzahl der Aufgaben im Punktebereich
@@ -263,12 +284,22 @@ class TaskRepository:
         cursor.execute(completed_query, params)
         completed_tasks = cursor.fetchone()[0]
         
+        # Anzahl der Aufgaben auf dem aktuellen Level
+        current_level_params = [min_points, max_points, min_completion_level]
+        if self.exam_id:
+            current_level_params.append(self.exam_id)
+        
+        cursor.execute(current_level_query, current_level_params)
+        tasks_at_current_level = cursor.fetchone()[0]
+        
         conn.close()
         
         return {
             'total': total_tasks,
             'completed': completed_tasks,
-            'remaining': total_tasks - completed_tasks
+            'remaining': total_tasks - completed_tasks,
+            'current_round': min_completion_level + 1,  # Round is 1-based (0 times done = Round 1)
+            'tasks_at_current_level': tasks_at_current_level
         }
 
 

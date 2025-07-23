@@ -13,14 +13,25 @@ class ConsoleUI:
         print(f"   Status: {'🔄 Wiederholung' if task['is_repeat'] else '🆕 Neue Aufgabe'}")
         print(f"   Teilaufgaben: {len(task['subtasks'])}")
         
-        # Zeige Aufgaben-Statistiken für den gewählten Punktebereich
+        # Zeige Aufgaben-Statistiken für den gewählten Punktebereich mit Round-Info
         if task_counts and point_range:
             min_points, max_points = point_range
             if min_points == max_points:
                 range_text = f"{min_points}P"
             else:
                 range_text = f"{min_points}-{max_points}P"
-            print(f"   📊 Punktebereich {range_text}: {task_counts['completed']}/{task_counts['total']} erledigt ({task_counts['remaining']} offen)")
+            
+            current_round = task_counts['current_round']
+            tasks_at_current_level = task_counts['tasks_at_current_level']
+            total_tasks = task_counts['total']
+            
+            print(f"   📊 Punktebereich {range_text}: {task_counts['completed']}/{task_counts['total']} erledigt")
+            print(f"   🔄 Aktuelle Runde {current_round}: {tasks_at_current_level}/{total_tasks} Aufgaben verfügbar")
+            
+            if current_round == 1:
+                print(f"   💡 Neue Aufgaben werden bevorzugt (Round {current_round})")
+            else:
+                print(f"   💡 Alle Aufgaben mindestens {current_round-1}x gemacht - Round {current_round} läuft")
         
         for i, subtask in enumerate(task['subtasks'], 1):
             print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
