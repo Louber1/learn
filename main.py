@@ -52,20 +52,11 @@ def main():
     # Show current exam info
     exam_info = task_service.get_current_exam_info()
     
-    print("=== ⏱️  ExPhys Lernassistent mit Live-Timer ===")
+    print("=== Lernassistent ===")
     if exam_info:
         print(f"📋 Current Exam: {exam_info['name']}")
         if exam_info['description']:
             print(f"   Description: {exam_info['description']}")
-    print("💡 Features:")
-    print("   - Multi-Exam Support 📋")
-    print("   - Live-Timer mit Sekunden-Anzeige")
-    print("   - Pause/Resume-Funktion")
-    print("   - Auto-Save alle 30 Sekunden 💾")
-    print("   - Session Recovery nach Unterbrechungen 🔄")
-    print("   - Ein Timer pro gesamter Aufgabe")
-    print("   - Vereinfachter Workflow")
-    print("   - Detaillierte Statistiken")
     
     # Prüfe auf unterbrochene Sessions
     recovery_handled = ui.show_recovery_options()
