@@ -29,21 +29,6 @@ def extract_main_task(task_str):
         print(f"⚠️  Unbekanntes Aufgabenformat: {task_str}")
         return task_str
 
-def clear_database(db_manager: DatabaseManager):
-    """Löscht alle Daten aus der Datenbank (multi-exam aware)"""
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-    
-    # Lösche alle Daten in der richtigen Reihenfolge (Foreign Key Constraints)
-    cursor.execute('DELETE FROM solution_attempts')
-    cursor.execute('DELETE FROM subtasks')
-    cursor.execute('DELETE FROM tasks')
-    cursor.execute('DELETE FROM worksheets')
-    cursor.execute('DELETE FROM exams')
-    
-    conn.commit()
-    conn.close()
-    print("✅ Database cleared (including exams)")
 
 def test_extract_function():
     """Testet die extract_main_task Funktion"""
@@ -366,14 +351,90 @@ def show_progress_overview(db_manager: DatabaseManager):
     finally:
         conn.close()
 
-def main():
-    """Streamlined CSV import - one CSV per exam"""
+def import_all_exams_from_directory(exams_dir: str, db_manager: DatabaseManager, clear_existing_exams: bool = False):
+    """Imports all CSV files from the exams directory"""
+    exams_path = Path(exams_dir)
     
-    # Check command line arguments
+    if not exams_path.exists():
+        print(f"❌ Exams directory not found: {exams_dir}")
+        return
+    
+    # Find all CSV files in the directory
+    csv_files = list(exams_path.glob("*.csv"))
+    
+    if not csv_files:
+        print(f"❌ No CSV files found in directory: {exams_dir}")
+        return
+    
+    print(f"📁 Found {len(csv_files)} CSV files in {exams_dir}:")
+    for csv_file in csv_files:
+        print(f"   📄 {csv_file.name}")
+    
+    print("\n" + "="*60)
+    print("📥 IMPORTING ALL EXAMS FROM DIRECTORY")
+    print("="*60)
+    
+    successful_imports = 0
+    failed_imports = 0
+    
+    for csv_file in csv_files:
+        print(f"\n{'='*40}")
+        print(f"📥 Processing: {csv_file.name}")
+        print(f"{'='*40}")
+        
+        try:
+            import_csv_to_db(str(csv_file), db_manager, clear_existing_exams)
+            successful_imports += 1
+            print(f"✅ Successfully imported: {csv_file.name}")
+            
+        except Exception as e:
+            failed_imports += 1
+            print(f"❌ Failed to import {csv_file.name}: {e}")
+            continue
+    
+    print("\n" + "="*60)
+    print("📊 IMPORT SUMMARY")
+    print("="*60)
+    print(f"✅ Successful imports: {successful_imports}")
+    print(f"❌ Failed imports: {failed_imports}")
+    print(f"📄 Total files processed: {len(csv_files)}")
+    
+    if successful_imports > 0:
+        print("\n📊 Overall database overview:")
+        show_database_content(db_manager, limit=15)
+
+def main():
+    """Import CSV data - supports single files or all files from exams directory"""
+    
+    # Initialize database
+    print("🔧 Initializing database...")
+    db_manager = DatabaseManager()
+    db_manager.init_database()
+    
+    # Check if we should import all exams from directory (default behavior)
+    if len(sys.argv) == 1:
+        # No arguments - import all from ./exams directory
+        print("📁 No specific file provided - importing all exams from ./exams directory")
+        import_all_exams_from_directory("./exams", db_manager, clear_existing_exams=False)
+        return
+    
+    # Check for --all flag
+    if "--all" in sys.argv:
+        clear_existing_exams = "--clear-exams" in sys.argv
+        print("📁 Importing all exams from ./exams directory")
+        if clear_existing_exams:
+            print("⚠️  Will clear existing exam data before import")
+        import_all_exams_from_directory("./exams", db_manager, clear_existing_exams)
+        return
+    
+    # Single file import (legacy behavior)
     if len(sys.argv) < 2:
-        print("❌ Usage: python import_data.py <csv_file> [--clear-exam]")
-        print("   Example: python import_data.py ExPhs1&2-Aufgaben-Punkte.csv")
-        print("   Use --clear-exam to clear existing data for this exam before import")
+        print("❌ Usage:")
+        print("   python import_data.py                    # Import all CSV files from ./exams")
+        print("   python import_data.py --all              # Import all CSV files from ./exams")
+        print("   python import_data.py --all --clear-exams # Import all, clearing existing data")
+        print("   python import_data.py <csv_file>         # Import specific CSV file")
+        print("   python import_data.py <csv_file> --clear-exam # Import specific file, clear existing")
         sys.exit(1)
     
     csv_file = sys.argv[1]
@@ -385,15 +446,10 @@ def main():
         sys.exit(1)
     
     print("=" * 60)
-    print("📥 STREAMLINED CSV IMPORT")
+    print("📥 SINGLE FILE CSV IMPORT")
     print("=" * 60)
     
-    # Initialize database
-    print("🔧 Initializing database...")
-    db_manager = DatabaseManager()
-    db_manager.init_database()
-    
-    # Import CSV
+    # Import single CSV
     try:
         print(f"\n📥 Starting import from: {csv_file}")
         if clear_existing_exam:
