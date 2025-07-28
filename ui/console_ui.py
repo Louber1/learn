@@ -11,7 +11,6 @@ class ConsoleUI:
         print(f"\n🎯 Aufgabe: Semester {task['semester']}, Blatt {task['sheet_number']}, Aufgabe {task['task_number']}")
         print(f"   Punkte: {task['total_points']}")
         print(f"   Status: {'🔄 Wiederholung' if task['is_repeat'] else '🆕 Neue Aufgabe'}")
-        print(f"   Teilaufgaben: {len(task['subtasks'])}")
         
         # Zeige Aufgaben-Statistiken für den gewählten Punktebereich mit Round-Info
         if task_counts and point_range:
@@ -32,9 +31,6 @@ class ConsoleUI:
                 print(f"   💡 Neue Aufgaben werden bevorzugt (Round {current_round})")
             else:
                 print(f"   💡 Alle Aufgaben mindestens {current_round-1}x gemacht - Round {current_round} läuft")
-        
-        for i, subtask in enumerate(task['subtasks'], 1):
-            print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
     
     def solve_task_interactive(self, task: Dict, task_counts: Optional[Dict[str, int]] = None, point_range: Optional[tuple[int, int]] = None):
         """Interaktive Aufgabenlösung mit vereinfachtem Timer"""

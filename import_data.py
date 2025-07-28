@@ -115,14 +115,6 @@ def _clear_exam_data(db_manager: DatabaseManager, exam_id: int):
             )
         ''', (exam_id,))
         
-        cursor.execute('''
-            DELETE FROM subtasks 
-            WHERE task_id IN (
-                SELECT t.id FROM tasks t
-                JOIN worksheets w ON t.worksheet_id = w.id
-                WHERE w.exam_id = ?
-            )
-        ''', (exam_id,))
         
         cursor.execute('''
             DELETE FROM tasks 
@@ -174,73 +166,65 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
         
         conn.commit()
         
-        # Import tasks and subtasks
+        # Group by main task and sum points
         print("\n📝 Processing tasks...")
         
-        for index, (_, row) in enumerate(df.iterrows()):
+        # Create a dictionary to accumulate points for each main task
+        task_points = {}
+        
+        for index, row in df.iterrows():
             try:
                 main_task = extract_main_task(row['Aufgabe'])
+                # Explicitly convert to scalar values
+                semester = int(pd.to_numeric(row['Semester']))
+                blatt = int(pd.to_numeric(row['Blatt']))
+                points = int(pd.to_numeric(row['Punkte']))
                 
+                # Create unique key for task
+                task_key = (semester, blatt, main_task)
+                
+                if task_key not in task_points:
+                    task_points[task_key] = 0
+                
+                task_points[task_key] += points
+                
+                # Convert index to int for arithmetic operations
+                row_num = int(index) if isinstance(index, (int, float)) else 0
+                if row_num % 20 == 0:
+                    print(f"   📄 Processed: {row_num + 1}/{len(df)} rows")
+            
+            except Exception as e:
+                row_num = int(index) if isinstance(index, (int, float)) else 0
+                print(f"❌ Error at row {row_num + 1}: {e}")
+                continue
+        
+        # Insert tasks with calculated total points
+        print(f"\n📝 Inserting {len(task_points)} unique tasks...")
+        
+        for (semester, blatt, main_task), total_points in task_points.items():
+            try:
                 # Get worksheet ID
                 cursor.execute('''
                     SELECT id FROM worksheets 
                     WHERE semester = ? AND sheet_number = ? AND exam_id = ?
-                ''', (int(row['Semester']), int(row['Blatt']), exam_id))
+                ''', (semester, blatt, exam_id))
                 
                 worksheet_result = cursor.fetchone()
                 if worksheet_result is None:
-                    print(f"❌ Worksheet not found: Semester {row['Semester']}, Blatt {row['Blatt']}")
+                    print(f"❌ Worksheet not found: Semester {semester}, Blatt {blatt}")
                     continue
                 
                 worksheet_id = worksheet_result[0]
                 
-                # Insert task (if not exists)
+                # Insert task with total points
                 cursor.execute('''
-                    INSERT OR IGNORE INTO tasks (worksheet_id, task_number, total_points)
-                    VALUES (?, ?, 0)
-                ''', (worksheet_id, main_task))
-                
-                # Get task ID
-                cursor.execute('''
-                    SELECT id FROM tasks 
-                    WHERE worksheet_id = ? AND task_number = ?
-                ''', (worksheet_id, main_task))
-                
-                task_result = cursor.fetchone()
-                if task_result is None:
-                    print(f"❌ Task not found: {main_task}")
-                    continue
-                
-                task_id = task_result[0]
-                
-                # Insert subtask
-                cursor.execute('''
-                    INSERT OR IGNORE INTO subtasks (task_id, subtask_name, points)
+                    INSERT OR REPLACE INTO tasks (worksheet_id, task_number, total_points)
                     VALUES (?, ?, ?)
-                ''', (task_id, row['Aufgabe'], int(row['Punkte'])))
+                ''', (worksheet_id, main_task, total_points))
                 
-                if index % 20 == 0:
-                    print(f"   📄 Processed: {index + 1}/{len(df)} rows")
-            
             except Exception as e:
-                print(f"❌ Error at row {index + 1}: {e}")
+                print(f"❌ Error inserting task {main_task}: {e}")
                 continue
-        
-        conn.commit()
-        
-        # Calculate total points
-        print("\n🔢 Calculating total points...")
-        cursor.execute('''
-            UPDATE tasks 
-            SET total_points = (
-                SELECT SUM(points) 
-                FROM subtasks 
-                WHERE subtasks.task_id = tasks.id
-            )
-            WHERE worksheet_id IN (
-                SELECT id FROM worksheets WHERE exam_id = ?
-            )
-        ''', (exam_id,))
         
         conn.commit()
         
@@ -256,20 +240,9 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
         ''', (exam_id,))
         task_count = cursor.fetchone()[0]
         
-        cursor.execute('''
-            SELECT COUNT(*) FROM subtasks 
-            WHERE task_id IN (
-                SELECT t.id FROM tasks t
-                JOIN worksheets w ON t.worksheet_id = w.id
-                WHERE w.exam_id = ?
-            )
-        ''', (exam_id,))
-        subtask_count = cursor.fetchone()[0]
-        
         print(f"\n✅ Import successful!")
         print(f"   📋 {worksheet_count} worksheets")
         print(f"   📝 {task_count} tasks")
-        print(f"   📄 {subtask_count} subtasks")
         
     except Exception as e:
         print(f"❌ Import failed: {e}")
@@ -288,12 +261,9 @@ def show_database_content(db_manager: DatabaseManager, limit: int = 20):
             w.sheet_number,
             t.task_number,
             t.total_points,
-            t.times_done,
-            GROUP_CONCAT(s.subtask_name || ' (' || s.points || 'P)', ', ') as subtasks
+            t.times_done
         FROM worksheets w
         JOIN tasks t ON w.id = t.worksheet_id
-        JOIN subtasks s ON t.id = s.task_id
-        GROUP BY w.semester, w.sheet_number, t.task_number
         ORDER BY w.semester, w.sheet_number, t.task_number
         LIMIT ?
     '''

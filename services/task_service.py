@@ -71,9 +71,6 @@ class TaskService:
     def time_task_interactive(self, task: Dict, resume_from_seconds: int = 0) -> Optional[int]:
         """Interaktive Zeitmessung für die gesamte Aufgabe"""
         print(f"\n🎯 Aufgabe: {task['task_number']} ({task['total_points']} Punkte)")
-        print("📝 Teilaufgaben:")
-        for i, subtask in enumerate(task['subtasks'], 1):
-            print(f"   {i}. {subtask['name']} ({subtask['points']}P)")
         
         if resume_from_seconds > 0:
             print(f"\n🔄 Fortsetzen von vorheriger Zeit: {format_time(resume_from_seconds)}")
@@ -92,7 +89,7 @@ class TaskService:
         )
         self.current_timer.start(resume_from_seconds)
         
-        print("\n   💡 Timer läuft! Arbeite an allen Teilaufgaben:")
+        print("\n   💡 Timer läuft! Arbeite an der Aufgabe:")
         print("   - [Enter] = Timer stoppen und Aufgabe beenden")
         print("   - [Leertaste] = Pause/Resume")
         print("   - [q] = Abbrechen")

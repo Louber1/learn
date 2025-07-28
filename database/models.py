@@ -49,17 +49,6 @@ class DatabaseManager:
             )
         ''')
         
-        # Subtasks
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS subtasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_id INTEGER NOT NULL,
-                subtask_name TEXT NOT NULL,
-                points INTEGER NOT NULL,
-                FOREIGN KEY (task_id) REFERENCES tasks(id),
-                UNIQUE(task_id, subtask_name)
-            )
-        ''')
         
         # Solution attempts
         cursor.execute('''
@@ -111,6 +100,7 @@ class DatabaseManager:
             last_updated = COALESCE(created_at, CURRENT_TIMESTAMP)
             WHERE status IS NULL OR status = 'completed'
         ''')
+        
 
 
 class TaskRepository:
@@ -147,17 +137,6 @@ class TaskRepository:
         from random import choice
         task = choice(tasks_at_min_level)
         
-        # Parse subtasks
-        subtasks = []
-        if task[6]:  # subtasks_data
-            for subtask_data in task[6].split('|'):
-                parts = subtask_data.split(':')
-                subtasks.append({
-                    'id': int(parts[0]),
-                    'name': parts[1],
-                    'points': int(parts[2])
-                })
-        
         conn.close()
         return {
             'id': task[2],
@@ -166,7 +145,6 @@ class TaskRepository:
             'task_number': task[3],
             'total_points': task[4],
             'times_done': task[5],
-            'subtasks': subtasks,
             'is_repeat': task[5] > 0
         }
     
@@ -197,11 +175,9 @@ class TaskRepository:
                 t.id,
                 t.task_number,
                 t.total_points,
-                t.times_done,
-                GROUP_CONCAT(s.id || ':' || s.subtask_name || ':' || s.points, '|') as subtasks_data
+                t.times_done
             FROM worksheets w
             JOIN tasks t ON w.id = t.worksheet_id
-            JOIN subtasks s ON t.id = s.task_id
             WHERE t.total_points >= ? AND t.total_points <= ? AND t.times_done = ?
         '''
         
@@ -209,8 +185,6 @@ class TaskRepository:
         if self.exam_id:
             query += ' AND w.exam_id = ?'
             params.append(self.exam_id)
-        
-        query += ' GROUP BY t.id'
         
         cursor.execute(query, params)
         return cursor.fetchall()
@@ -426,14 +400,11 @@ class AttemptRepository:
                 w.sheet_number,
                 t.task_number,
                 t.total_points,
-                t.times_done,
-                GROUP_CONCAT(s.id || ':' || s.subtask_name || ':' || s.points, '|') as subtasks_data
+                t.times_done
             FROM solution_attempts sa
             JOIN tasks t ON sa.task_id = t.id
             JOIN worksheets w ON t.worksheet_id = w.id
-            JOIN subtasks s ON t.id = s.task_id
             WHERE sa.id = ?
-            GROUP BY t.id
         ''', (attempt_id,))
         
         result = cursor.fetchone()
@@ -442,17 +413,6 @@ class AttemptRepository:
         if not result:
             return None
         
-        # Parse subtasks
-        subtasks = []
-        if result[6]:  # subtasks_data
-            for subtask_data in result[6].split('|'):
-                parts = subtask_data.split(':')
-                subtasks.append({
-                    'id': int(parts[0]),
-                    'name': parts[1],
-                    'points': int(parts[2])
-                })
-        
         return {
             'id': result[0],
             'semester': result[1],
@@ -460,7 +420,6 @@ class AttemptRepository:
             'task_number': result[3],
             'total_points': result[4],
             'times_done': result[5],
-            'subtasks': subtasks,
             'is_repeat': result[5] > 0
         }
 
