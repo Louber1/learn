@@ -131,12 +131,10 @@ class ExamManager:
                 SELECT 
                     COUNT(DISTINCT w.id) as worksheets,
                     COUNT(DISTINCT t.id) as tasks,
-                    COUNT(DISTINCT s.id) as subtasks,
                     COUNT(DISTINCT sa.id) as attempts
                 FROM exams e
                 LEFT JOIN worksheets w ON e.id = w.exam_id
                 LEFT JOIN tasks t ON w.id = t.worksheet_id
-                LEFT JOIN subtasks s ON t.id = s.task_id
                 LEFT JOIN solution_attempts sa ON t.id = sa.task_id
                 WHERE e.id = ?
             ''', (exam_id,))
@@ -146,8 +144,7 @@ class ExamManager:
             print(f"⚠️  This will delete exam '{exam_name}' and:")
             print(f"   📝 {counts[0]} worksheets")
             print(f"   📄 {counts[1]} tasks")
-            print(f"   📋 {counts[2]} subtasks")
-            print(f"   ⏱️  {counts[3]} solution attempts")
+            print(f"   ⏱️  {counts[2]} solution attempts")
             
             confirm = input("\nAre you sure? This cannot be undone! (type 'DELETE' to confirm): ")
             if confirm != 'DELETE':
@@ -164,14 +161,6 @@ class ExamManager:
                 )
             ''', (exam_id,))
             
-            cursor.execute('''
-                DELETE FROM subtasks 
-                WHERE task_id IN (
-                    SELECT t.id FROM tasks t
-                    JOIN worksheets w ON t.worksheet_id = w.id
-                    WHERE w.exam_id = ?
-                )
-            ''', (exam_id,))
             
             cursor.execute('''
                 DELETE FROM tasks 

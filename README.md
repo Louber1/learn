@@ -160,7 +160,6 @@ Das System verfolgt:
 exams           # Prüfungen
 ├── worksheets  # Übungsblätter
     ├── tasks   # Hauptaufgaben (z.B. "1.1", "2")
-        ├── subtasks          # Teilaufgaben (z.B. "1.1a", "2b3")
         └── solution_attempts # Lösungsversuche mit Zeitmessung
 ```
 
