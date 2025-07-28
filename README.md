@@ -28,6 +28,15 @@ Dieses Projekt ist ein Lernassistent, der dabei hilft, Physikaufgaben strukturie
 git clone https://github.com/Louber1/learn.git
 cd learn
 
+# Virtuelles Environment erstellen
+python -m venv .venv
+
+# Virtuelles Environment aktivieren
+# Für Windows:
+.venv\Scripts\activate
+# Für macOS/Linux:
+source .venv/bin/activate
+
 # Abhängigkeiten installieren
 pip install pandas
 
