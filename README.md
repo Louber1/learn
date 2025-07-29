@@ -19,8 +19,11 @@ Dieses Projekt ist ein Lernassistent, der dabei hilft, Physikaufgaben strukturie
 ## 🚀 Installation & Setup
 
 ### Voraussetzungen
-- Python 3.7+
-- pandas (für CSV-Import)
+
+- **uv** – Ein extrem schneller Python-Paket- und Projektmanager, geschrieben in Rust.  
+  Installationsanleitung: [uv Installation](https://docs.astral.sh/uv/getting-started/installation/)
+- **Python** – Version 3.7 oder höher.
+- **pandas** – Für den Import und die Verarbeitung von CSV-Dateien.
 
 ### Installation
 ```bash
@@ -29,7 +32,7 @@ git clone https://github.com/Louber1/learn.git
 cd learn
 
 # Virtuelles Environment erstellen
-python -m venv .venv
+uv venv
 
 # Virtuelles Environment aktivieren
 # Für Windows:
@@ -38,7 +41,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 # Abhängigkeiten installieren
-pip install pandas
+uv pip install pandas
 
 # Daten importieren (alle CSV-Dateien aus ./exams)
 python import_data.py
