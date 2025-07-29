@@ -23,7 +23,6 @@ Dieses Projekt ist ein Lernassistent, der dabei hilft, Physikaufgaben strukturie
 - **uv** – Ein extrem schneller Python-Paket- und Projektmanager, geschrieben in Rust.  
   Installationsanleitung: [uv Installation](https://docs.astral.sh/uv/getting-started/installation/)
 - **Python** – Version 3.7 oder höher.
-- **pandas** – Für den Import und die Verarbeitung von CSV-Dateien.
 
 ### Installation
 ```bash
