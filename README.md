@@ -181,7 +181,7 @@ exams           # Prüfungen
 
 ## 📝 Lizenz
 
-Dieses Projekt steht unter der UNLICENSE-Lizenz. Siehe `LICENSE` Datei für Details.
+Dieses Projekt steht unter der Unlicense-Lizenz. Siehe `LICENSE` Datei für Details.
 
 ---
 
