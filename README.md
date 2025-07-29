@@ -183,24 +183,6 @@ exams           # Prüfungen
 
 Dieses Projekt steht unter der MIT-Lizenz. Siehe `LICENSE` Datei für Details.
 
-## 🐛 Bekannte Probleme & Lösungen
-
-### Import-Probleme
-- **CSV nicht gefunden**: Prüfe Dateipfad und Dateiformat
-- **Encoding-Fehler**: CSV sollte UTF-8 kodiert sein
-- **Spalten fehlen**: Alle erforderlichen Spalten müssen vorhanden sein
-
-### Timer-Probleme
-- **Timer stoppt**: Prüfe Tastatureingaben (SPACE/ESC)
-- **Session Recovery**: Nutze die Recovery-Option beim Programmstart
-
-## 📞 Support
-
-Bei Problemen oder Fragen:
-1. Prüfe die bekannten Probleme oben
-2. Erstelle ein Issue auf GitHub
-3. Beschreibe das Problem mit Fehlermeldung und Schritten zur Reproduktion
-
 ---
 
 **Viel Erfolg beim Lernen! 🎓**
