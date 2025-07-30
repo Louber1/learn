@@ -6,43 +6,6 @@ from typing import Optional
 from database.models import DatabaseManager
 from exam_manager import ExamManager
 
-def extract_main_task(task_str):
-    """
-    Extrahiert Hauptaufgabe aus Teilaufgabe
-    Beispiele:
-    '1.1a' -> '1.1'
-    '1.1b' -> '1.1' 
-    '2a1' -> '2'
-    '2a6' -> '2'
-    '3.2c4' -> '3.2'
-    """
-    task_str = str(task_str).strip()
-    
-    # Entferne alles ab dem ersten Buchstaben (und was danach kommt)
-    # Das funktioniert für: 1.1a, 1.1b, 2a1, 2a6, 3.2c4, etc.
-    match = re.match(r'^(\d+(?:\.\d+)*)', task_str)
-    
-    if match:
-        return match.group(1)
-    else:
-        # Fallback: falls kein Pattern erkannt wird, gib original zurück
-        print(f"⚠️  Unbekanntes Aufgabenformat: {task_str}")
-        return task_str
-
-
-def test_extract_function():
-    """Testet die extract_main_task Funktion"""
-    test_cases = [
-        "1.1a", "1.1b", "1.2", "1.3",
-        "2a1", "2a2", "2a3", "2a4", "2a5", "2a6",
-        "3.2c4", "4b", "5.1.2a", "6"
-    ]
-    
-    print("🧪 Teste extract_main_task Funktion:")
-    for test in test_cases:
-        result = extract_main_task(test)
-        print(f"   '{test}' -> '{result}'")
-
 def import_csv_to_db(csv_path: str, db_manager: DatabaseManager, clear_existing_exam: bool = False):
     """Importiert CSV-Daten in die Datenbank - streamlined version"""
     
@@ -72,8 +35,7 @@ def import_csv_to_db(csv_path: str, db_manager: DatabaseManager, clear_existing_
     print("\n🔍 Task extraction examples:")
     sample_tasks = df['Aufgabe'].unique()[:10]  # First 10 unique tasks
     for task in sample_tasks:
-        main_task = extract_main_task(task)
-        print(f"   '{task}' -> '{main_task}'")
+        print(f"   '{task}' -> '{task}'")
     
     # Use ExamManager to handle exam creation/lookup
     exam_manager = ExamManager(db_manager)
@@ -174,14 +136,14 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
         
         for index, row in df.iterrows():
             try:
-                main_task = extract_main_task(row['Aufgabe'])
+                task = str(row['Aufgabe'])
                 # Explicitly convert to scalar values
                 semester = int(pd.to_numeric(row['Semester']))
                 blatt = int(pd.to_numeric(row['Blatt']))
                 points = int(pd.to_numeric(row['Punkte']))
                 
                 # Create unique key for task
-                task_key = (semester, blatt, main_task)
+                task_key = (semester, blatt, task)
                 
                 if task_key not in task_points:
                     task_points[task_key] = 0
@@ -201,7 +163,7 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
         # Insert tasks with calculated total points
         print(f"\n📝 Inserting {len(task_points)} unique tasks...")
         
-        for (semester, blatt, main_task), total_points in task_points.items():
+        for (semester, blatt, task), total_points in task_points.items():
             try:
                 # Get worksheet ID
                 cursor.execute('''
@@ -220,10 +182,10 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
                 cursor.execute('''
                     INSERT OR REPLACE INTO tasks (worksheet_id, task_number, total_points)
                     VALUES (?, ?, ?)
-                ''', (worksheet_id, main_task, total_points))
+                ''', (worksheet_id, task, total_points))
                 
             except Exception as e:
-                print(f"❌ Error inserting task {main_task}: {e}")
+                print(f"❌ Error inserting task {task}: {e}")
                 continue
         
         conn.commit()

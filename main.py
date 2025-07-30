@@ -23,7 +23,7 @@ def select_exam(db_manager: DatabaseManager) -> int:
         print(f"   {i}. {exam['name']}")
         if exam['description']:
             print(f"      {exam['description']}")
-        print(f"      Tasks: {exam['task_count']}, Worksheets: {exam['worksheet_count']}")
+        print(f"      Tasks: {exam['task_count']}")
         print()
     
     while True:
