@@ -27,7 +27,7 @@ Dieses Projekt ist ein Lernassistent, der dabei hilft, Physikaufgaben strukturie
 ### Installation
 ```bash
 # Repository klonen
-git clone https://github.com/Louber1/learn.git
+gh repo clone Louber1/learn
 cd learn
 
 # Virtuelles Environment erstellen
