@@ -301,20 +301,6 @@ class AttemptRepository:
         
         return attempt_id
     
-    def update_attempt_time(self, attempt_id: int, total_time: int):
-        """Aktualisiert die Gesamtzeit eines Versuchs"""
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE solution_attempts 
-            SET total_time_seconds = ?
-            WHERE id = ?
-        ''', (total_time, attempt_id))
-        
-        conn.commit()
-        conn.close()
-    
     def update_attempt_status(self, attempt_id: int, status: str, total_time: Optional[int] = None):
         """Aktualisiert Status und optional Zeit eines Versuchs"""
         conn = self.db_manager.get_connection()

@@ -94,24 +94,6 @@ class ConsoleUI:
         else:
             self.task_service.cancel_attempt()
     
-    def show_statistics(self):
-        """Zeigt Zeitstatistiken"""
-        results = self.task_service.get_statistics()
-        
-        if not results:
-            print("📊 Noch keine Zeitdaten verfügbar")
-            return
-        
-        print(f"\n📊 Top 10 Aufgaben nach Häufigkeit:")
-        print(f"{'Aufgabe':<20} {'Versuche':<8} {'⌀ Zeit':<8} {'🏆 Beste':<8} {'😰 Schlechteste':<8}")
-        print("-" * 60)
-        
-        for row in results:
-            avg_time = format_time(int(row[2])) if row[2] else "N/A"
-            best_time = format_time(int(row[3])) if row[3] else "N/A"
-            worst_time = format_time(int(row[4])) if row[4] else "N/A"
-            print(f"{row[0]:<20} {row[1]:<8} {avg_time:<8} {best_time:<8} {worst_time:<8}")
-    
     def show_recovery_options(self) -> bool:
         """Zeigt Recovery-Optionen für unterbrochene Sessions"""
         incomplete_attempts = self.task_service.get_incomplete_attempts()

@@ -64,9 +64,8 @@ def main():
         if exam_info:
             print(f"Current Exam: {exam_info['name']}")
         print("1. Aufgabe lösen")
-        print("2. Zeitstatistiken anzeigen")
-        print("3. Switch exam")
-        print("4. Beenden")
+        print("2. Switch exam")
+        print("3. Beenden")
         
         choice = get_simple_input("\nWahl: ")
         
@@ -83,16 +82,13 @@ def main():
                     print("❌ Keine Aufgabe im gewählten Punktebereich gefunden!")
         
         elif choice == '2':
-            ui.show_statistics()
-        
-        elif choice == '3':
             # Switch exam
             new_exam_id = select_exam(db_manager)
             task_service.set_exam_id(new_exam_id)
             exam_info = task_service.get_current_exam_info()
             print(f"✅ Switched to exam: {exam_info['name'] if exam_info else 'Unknown'}")
         
-        elif choice == '4':
+        elif choice == '3':
             print("👋 Auf Wiedersehen!")
             break
         

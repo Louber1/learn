@@ -64,29 +64,6 @@ class ExamManager:
             }
         return None
     
-    def get_exam_by_id(self, exam_id: int) -> Optional[Dict]:
-        """Gets exam by ID"""
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT id, name, description, created_at
-            FROM exams
-            WHERE id = ?
-        ''', (exam_id,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result:
-            return {
-                'id': result[0],
-                'name': result[1],
-                'description': result[2],
-                'created_at': result[3]
-            }
-        return None
-    
     def create_exam(self, name: str, description: Optional[str] = None) -> int:
         """Creates a new exam (used internally by import system)"""
         conn = self.db_manager.get_connection()

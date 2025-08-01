@@ -54,8 +54,8 @@ def import_csv_to_db(csv_path: str, db_manager: DatabaseManager, clear_existing_
         _clear_exam_data(db_manager, exam_id)
     
     try:
-        # Import CSV data
-        _import_csv_data(csv_path, db_manager, exam_id)
+        # Import CSV data with smart merge
+        _import_csv_data_smart_merge(csv_path, db_manager, exam_id)
         
     except Exception as e:
         print(f"❌ Import failed: {e}")
@@ -97,8 +97,8 @@ def _clear_exam_data(db_manager: DatabaseManager, exam_id: int):
     finally:
         conn.close()
 
-def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
-    """Imports CSV data for a specific exam"""
+def _import_csv_data_smart_merge(csv_path: str, db_manager: DatabaseManager, exam_id: int):
+    """Imports CSV data with smart merging - preserves existing tasks and their IDs"""
     print(f"📖 Reading CSV file: {csv_path}")
     
     try:
@@ -112,7 +112,7 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
     cursor = conn.cursor()
     
     try:
-        # Import worksheets
+        # Import worksheets (using INSERT OR IGNORE to preserve existing ones)
         print("\n📋 Importing worksheets...")
         worksheets = df[['Semester', 'Blatt']].drop_duplicates()
         
@@ -122,7 +122,19 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
                     INSERT OR IGNORE INTO worksheets (semester, sheet_number, exam_id)
                     VALUES (?, ?, ?)
                 ''', (int(row['Semester']), int(row['Blatt']), exam_id))
-                print(f"   ✅ Semester {row['Semester']}, Blatt {row['Blatt']}")
+                
+                # Check if it was a new worksheet or existing one
+                cursor.execute('''
+                    SELECT id FROM worksheets 
+                    WHERE semester = ? AND sheet_number = ? AND exam_id = ?
+                ''', (int(row['Semester']), int(row['Blatt']), exam_id))
+                
+                worksheet_id = cursor.fetchone()[0]
+                if cursor.rowcount > 0:  # New worksheet was inserted  
+                    print(f"   ✅ NEW: Semester {row['Semester']}, Blatt {row['Blatt']}")
+                else:
+                    print(f"   ↻ EXISTS: Semester {row['Semester']}, Blatt {row['Blatt']} (ID: {worksheet_id})")
+                    
             except Exception as e:
                 print(f"   ⚠️  Error with worksheet: Semester {row['Semester']}, Blatt {row['Blatt']} - {e}")
         
@@ -137,7 +149,6 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
         for index, row in df.iterrows():
             try:
                 task = str(row['Aufgabe'])
-                # Explicitly convert to scalar values
                 semester = int(pd.to_numeric(row['Semester']))
                 blatt = int(pd.to_numeric(row['Blatt']))
                 points = int(pd.to_numeric(row['Punkte']))
@@ -150,7 +161,6 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
                 
                 task_points[task_key] += points
                 
-                # Convert index to int for arithmetic operations
                 row_num = int(index) if isinstance(index, (int, float)) else 0
                 if row_num % 20 == 0:
                     print(f"   📄 Processed: {row_num + 1}/{len(df)} rows")
@@ -160,8 +170,12 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
                 print(f"❌ Error at row {row_num + 1}: {e}")
                 continue
         
-        # Insert tasks with calculated total points
-        print(f"\n📝 Inserting {len(task_points)} unique tasks...")
+        # Smart merge of tasks - preserve existing tasks and their IDs
+        print(f"\n📝 Smart merging {len(task_points)} tasks...")
+        
+        updated_count = 0
+        created_count = 0
+        unchanged_count = 0
         
         for (semester, blatt, task), total_points in task_points.items():
             try:
@@ -178,14 +192,42 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
                 
                 worksheet_id = worksheet_result[0]
                 
-                # Insert task with total points
+                # Check if task already exists
                 cursor.execute('''
-                    INSERT OR REPLACE INTO tasks (worksheet_id, task_number, total_points)
-                    VALUES (?, ?, ?)
-                ''', (worksheet_id, task, total_points))
+                    SELECT id, total_points FROM tasks 
+                    WHERE worksheet_id = ? AND task_number = ?
+                ''', (worksheet_id, task))
+                
+                existing_task = cursor.fetchone()
+                
+                if existing_task:
+                    # Task exists - check if points changed
+                    task_id, current_points = existing_task
+                    
+                    if current_points != total_points:
+                        # Update points only
+                        cursor.execute('''
+                            UPDATE tasks SET total_points = ? 
+                            WHERE id = ?
+                        ''', (total_points, task_id))
+                        print(f"   ↻ UPDATED: S{semester}/B{blatt}/T{task} - {current_points}→{total_points} pts (ID: {task_id})")
+                        updated_count += 1
+                    else:
+                        print(f"   ✓ UNCHANGED: S{semester}/B{blatt}/T{task} - {total_points} pts (ID: {task_id})")
+                        unchanged_count += 1
+                else:
+                    # New task - insert it
+                    cursor.execute('''
+                        INSERT INTO tasks (worksheet_id, task_number, total_points)
+                        VALUES (?, ?, ?)
+                    ''', (worksheet_id, task, total_points))
+                    
+                    new_task_id = cursor.lastrowid
+                    print(f"   ✅ NEW: S{semester}/B{blatt}/T{task} - {total_points} pts (ID: {new_task_id})")
+                    created_count += 1
                 
             except Exception as e:
-                print(f"❌ Error inserting task {task}: {e}")
+                print(f"❌ Error processing task {task}: {e}")
                 continue
         
         conn.commit()
@@ -202,9 +244,13 @@ def _import_csv_data(csv_path: str, db_manager: DatabaseManager, exam_id: int):
         ''', (exam_id,))
         task_count = cursor.fetchone()[0]
         
-        print(f"\n✅ Import successful!")
-        print(f"   📋 {worksheet_count} worksheets")
-        print(f"   📝 {task_count} tasks")
+        print(f"\n✅ Smart merge completed!")
+        print(f"   📋 {worksheet_count} worksheets total")
+        print(f"   📝 {task_count} tasks total")
+        print(f"   ➕ {created_count} new tasks created")
+        print(f"   ↻ {updated_count} existing tasks updated")
+        print(f"   ✓ {unchanged_count} tasks unchanged")
+        print(f"   🔒 All existing task IDs and solution_attempts preserved!")
         
     except Exception as e:
         print(f"❌ Import failed: {e}")
@@ -250,36 +296,6 @@ def show_database_content(db_manager: DatabaseManager, limit: int = 20):
         
     except Exception as e:
         print(f"❌ Fehler beim Anzeigen der Datenbank: {e}")
-    finally:
-        conn.close()
-
-def show_progress_overview(db_manager: DatabaseManager):
-    """Zeigt Übersicht über den Lernfortschritt"""
-    conn = db_manager.get_connection()
-    
-    query = '''
-        SELECT 
-            t.total_points,
-            COUNT(*) as total_tasks,
-            SUM(CASE WHEN t.times_done = 0 THEN 1 ELSE 0 END) as new_tasks,
-            SUM(CASE WHEN t.times_done > 0 THEN 1 ELSE 0 END) as done_tasks,
-            ROUND(AVG(CAST(t.times_done AS FLOAT)), 2) as avg_repetitions
-        FROM tasks t
-        GROUP BY t.total_points
-        ORDER BY t.total_points
-    '''
-    
-    try:
-        df = pd.read_sql_query(query, conn)
-        print(f"\n📊 Lernfortschritt nach Punkten:")
-        print(f"{'Punkte':<8} {'Gesamt':<8} {'Offen':<8} {'Fertig':<8} {'⌀ Wiederh.':<12}")
-        print("-" * 50)
-        
-        for _, row in df.iterrows():
-            print(f"{row['total_points']:<8} {row['total_tasks']:<8} {row['new_tasks']:<8} {row['done_tasks']:<8} {row['avg_repetitions']:<12}")
-        
-    except Exception as e:
-        print(f"❌ Fehler beim Anzeigen des Fortschritts: {e}")
     finally:
         conn.close()
 
@@ -362,10 +378,10 @@ def main():
     # Single file import (legacy behavior)
     if len(sys.argv) < 2:
         print("❌ Usage:")
-        print("   python import_data.py                    # Import all CSV files from ./exams")
-        print("   python import_data.py --all              # Import all CSV files from ./exams")
+        print("   python import_data.py                    # Import all CSV files from ./exams (smart merge)")
+        print("   python import_data.py --all              # Import all CSV files from ./exams (smart merge)")
         print("   python import_data.py --all --clear-exams # Import all, clearing existing data")
-        print("   python import_data.py <csv_file>         # Import specific CSV file")
+        print("   python import_data.py <csv_file>         # Import specific CSV file (smart merge)")
         print("   python import_data.py <csv_file> --clear-exam # Import specific file, clear existing")
         sys.exit(1)
     
@@ -386,6 +402,8 @@ def main():
         print(f"\n📥 Starting import from: {csv_file}")
         if clear_existing_exam:
             print("⚠️  Will clear existing exam data before import")
+        else:
+            print("🔄 Using smart merge - existing tasks and progress preserved")
         
         import_csv_to_db(csv_file, db_manager, clear_existing_exam)
         
