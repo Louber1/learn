@@ -1,5 +1,5 @@
 from typing import Dict, Optional, List
-from database.models import DatabaseManager, TaskRepository, AttemptRepository
+from database.models import DatabaseManager, TaskRepository, AttemptRepository, ExamRepository
 from timer.timer import LiveTimer
 from utils.keyboard import KeyboardListener, format_time
 
@@ -9,6 +9,7 @@ class TaskService:
         self.exam_id = exam_id
         self.task_repo = TaskRepository(db_manager, exam_id)
         self.attempt_repo = AttemptRepository(db_manager)
+        self.exam_repo = ExamRepository(db_manager)
         self.current_attempt_id: Optional[int] = None
         self.current_timer: Optional[LiveTimer] = None
     
@@ -175,3 +176,15 @@ class TaskService:
     def get_statistics(self, task_id: Optional[int] = None) -> List:
         """Holt Zeitstatistiken"""
         return self.attempt_repo.get_statistics(task_id)
+    
+    def list_exams(self) -> List[Dict]:
+        """Lists all available exams"""
+        return self.exam_repo.list_exams()
+    
+    def get_exam_by_name(self, name: str) -> Optional[Dict]:
+        """Gets exam by name"""
+        return self.exam_repo.get_exam_by_name(name)
+    
+    def create_exam(self, name: str, description: Optional[str] = None) -> int:
+        """Creates a new exam (used internally by import system)"""
+        return self.exam_repo.create_exam(name, description)

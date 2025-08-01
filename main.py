@@ -2,15 +2,13 @@ from database.models import DatabaseManager
 from services.task_service import TaskService
 from ui.console_ui import ConsoleUI
 from utils.keyboard import get_simple_input
-from exam_manager import ExamManager
 
-def select_exam(db_manager: DatabaseManager) -> int:
+def select_exam(task_service: TaskService) -> int:
     """Allows user to select an exam"""
-    exam_manager = ExamManager(db_manager)
-    exams = exam_manager.list_exams()
+    exams = task_service.list_exams()
     
     if not exams:
-        print("❌ No exams found! Please run the migration script first or add exams using exam_manager.py")
+        print("❌ No exams found! Please run 'python import_data.py' to import exams from CSV files")
         exit(1)
     
     if len(exams) == 1:
@@ -43,8 +41,11 @@ def main():
     db_manager = DatabaseManager()
     db_manager.init_database()
     
+    # Create task service for exam selection
+    temp_task_service = TaskService(db_manager)
+    
     # Select exam
-    exam_id = select_exam(db_manager)
+    exam_id = select_exam(temp_task_service)
     
     task_service = TaskService(db_manager, exam_id)
     ui = ConsoleUI(task_service)
@@ -83,7 +84,7 @@ def main():
         
         elif choice == '2':
             # Switch exam
-            new_exam_id = select_exam(db_manager)
+            new_exam_id = select_exam(task_service)
             task_service.set_exam_id(new_exam_id)
             exam_info = task_service.get_current_exam_info()
             print(f"✅ Switched to exam: {exam_info['name'] if exam_info else 'Unknown'}")

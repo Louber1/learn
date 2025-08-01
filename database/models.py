@@ -277,6 +277,94 @@ class TaskRepository:
         }
 
 
+class ExamRepository:
+    def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
+    
+    def list_exams(self) -> List[Dict]:
+        """Lists all available exams"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                e.id,
+                e.name,
+                e.description,
+                e.created_at,
+                COUNT(w.id) as worksheet_count,
+                COUNT(DISTINCT t.id) as task_count
+            FROM exams e
+            LEFT JOIN worksheets w ON e.id = w.exam_id
+            LEFT JOIN tasks t ON w.id = t.worksheet_id
+            GROUP BY e.id, e.name, e.description, e.created_at
+            ORDER BY e.created_at
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        exams = []
+        for row in results:
+            exams.append({
+                'id': row[0],
+                'name': row[1],
+                'description': row[2],
+                'created_at': row[3],
+                'worksheet_count': row[4],
+                'task_count': row[5]
+            })
+        
+        return exams
+    
+    def get_exam_by_name(self, name: str) -> Optional[Dict]:
+        """Gets exam by name"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name, description, created_at
+            FROM exams
+            WHERE name = ?
+        ''', (name,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return {
+                'id': result[0],
+                'name': result[1],
+                'description': result[2],
+                'created_at': result[3]
+            }
+        return None
+    
+    def create_exam(self, name: str, description: Optional[str] = None) -> int:
+        """Creates a new exam (used internally by import system)"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO exams (name, description)
+                VALUES (?, ?)
+            ''', (name, description))
+            
+            exam_id = cursor.lastrowid
+            if exam_id is None:
+                raise RuntimeError("Failed to create exam - no ID returned")
+            
+            conn.commit()
+            return exam_id
+            
+        except Exception as e:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 class AttemptRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager

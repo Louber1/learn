@@ -3,8 +3,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Optional
-from database.models import DatabaseManager
-from exam_manager import ExamManager
+from database.models import DatabaseManager, ExamRepository
 
 def import_csv_to_db(csv_path: str, db_manager: DatabaseManager, clear_existing_exam: bool = False):
     """Importiert CSV-Daten in die Datenbank - streamlined version"""
@@ -37,14 +36,14 @@ def import_csv_to_db(csv_path: str, db_manager: DatabaseManager, clear_existing_
     for task in sample_tasks:
         print(f"   '{task}' -> '{task}'")
     
-    # Use ExamManager to handle exam creation/lookup
-    exam_manager = ExamManager(db_manager)
+    # Use ExamRepository to handle exam creation/lookup
+    exam_repo = ExamRepository(db_manager)
     
     # Check if exam exists, create if not
-    exam = exam_manager.get_exam_by_name(exam_name)
+    exam = exam_repo.get_exam_by_name(exam_name)
     if not exam:
         print(f"📋 Creating new exam: {exam_name}")
-        exam_id = exam_manager.create_exam(exam_name, f"Imported from {csv_path}")
+        exam_id = exam_repo.create_exam(exam_name, f"Imported from {csv_path}")
     else:
         exam_id = exam['id']
         print(f"📋 Using existing exam: {exam_name} (ID: {exam_id})")
