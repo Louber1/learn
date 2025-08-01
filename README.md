@@ -40,7 +40,7 @@ uv venv
 source .venv/bin/activate
 
 # Abhängigkeiten installieren
-uv pip install pandas
+uv pip install -r requirements.txt
 
 # Daten importieren (alle CSV-Dateien aus ./exams)
 python import_data.py
@@ -54,9 +54,9 @@ python main.py
 ```
 learn/
 ├── main.py                    # Hauptprogramm
-├── exam_manager.py           # Prüfungsverwaltung
 ├── import_data.py            # CSV-Datenimport
 ├── view_solution_attempts.py # Lösungsversuche anzeigen
+├── analytics.ipynb           # Statistiken
 ├── database/
 │   └── models.py            # Datenbankmodelle und Repository-Klassen
 ├── services/
@@ -109,14 +109,13 @@ python main.py
 
 ### Menü-Optionen
 1. **Aufgabe lösen**: Wähle Punktebereich und löse eine zufällige Aufgabe
-2. **Zeitstatistiken anzeigen**: Zeige Lernfortschritt und Zeitstatistiken
-3. **Switch exam**: Wechsle zwischen verschiedenen Prüfungen
-4. **Beenden**: Programm beenden
+2. **Switch exam**: Wechsle zwischen verschiedenen Prüfungen
+3. **Beenden**: Programm beenden
 
-### Prüfungen verwalten
+### Statistiken anzeigen
 ```bash
-# Prüfungen auflisten und löschen
-python exam_manager.py
+# Statistiken zur Geschwindigkeit und Anzahl der gelösten Aufgaben anzeigen
+analytics.ipynb
 ```
 
 ### Lösungsversuche anzeigen
