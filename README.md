@@ -10,6 +10,7 @@ Dieses Projekt ist ein Lernassistent, der dabei hilft, Physikaufgaben strukturie
 
 - **📊 Multi-Exam Support**: Verwaltung mehrerer Prüfungen/Examina
 - **🎯 Intelligente Aufgabenauswahl**: Round-basierte Logik für optimale Wiederholung
+- **⏱️ Zeit/Punkt-basierte Auswahl**: Gezielte Auswahl von Aufgaben mit längster Bearbeitungszeit pro Punkt
 - **⏱️ Integrierter Timer**: Zeitmessung für jede Aufgabe mit Auto-Save
 - **📈 Fortschrittsverfolgung**: Detaillierte Statistiken und Lernfortschritt
 - **🔄 Session Recovery**: Wiederherstellung unterbrochener Lernsessions
@@ -108,9 +109,10 @@ python main.py
 ```
 
 ### Menü-Optionen
-1. **Aufgabe lösen**: Wähle Punktebereich und löse eine zufällige Aufgabe
-2. **Switch exam**: Wechsle zwischen verschiedenen Prüfungen
-3. **Beenden**: Programm beenden
+1. **Aufgabe lösen (zufällig)**: Wähle Punktebereich und löse eine zufällige Aufgabe basierend auf der Round-Logik
+2. **Aufgabe mit längster Zeit/Punkt lösen**: Wähle die Aufgabe aus dem Punktebereich, deren letzter Versuch die längste Zeit pro Punkt benötigt hat
+3. **Switch exam**: Wechsle zwischen verschiedenen Prüfungen
+4. **Beenden**: Programm beenden
 
 ### Statistiken anzeigen
 ```bash
@@ -137,6 +139,15 @@ Das System verwendet eine **Round-basierte Logik**:
 - Finde die niedrigste Wiederholungsanzahl im gewählten Punktebereich
 - Wähle zufällig eine Aufgabe aus dieser "Round"
 - Erst wenn alle Aufgaben einer Round abgeschlossen sind, geht es zur nächsten
+
+### 🎯 Zeit/Punkt-basierte Auswahl
+
+Zusätzlich zur Round-basierten Logik bietet das System eine **Zeit/Punkt-basierte Auswahl**:
+
+- **Zweck**: Identifiziert Aufgaben, die beim letzten Versuch überdurchschnittlich lange pro Punkt gedauert haben
+- **Algorithmus**: Berechnet für jede Aufgabe die Zeit pro Punkt des letzten Versuchs und wählt die langsamste aus
+- **Nutzen**: Ermöglicht gezieltes Üben von Aufgaben, die noch Schwierigkeiten bereiten
+- **Anzeige**: Zeigt die letzte benötigte Zeit und Zeit pro Punkt in der Aufgabenübersicht an
 
 ## ⏱️ Timer-Features
 

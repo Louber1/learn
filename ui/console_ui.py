@@ -12,6 +12,10 @@ class ConsoleUI:
         print(f"   Punkte: {task['total_points']}")
         print(f"   Status: {'🔄 Wiederholung' if task['is_repeat'] else '🆕 Neue Aufgabe'}")
         
+        # Show time per point information if available
+        if 'time_per_point' in task and 'last_time_seconds' in task:
+            print(f"   ⏱️  Letzte Zeit: {format_time(task['last_time_seconds'])} ({task['time_per_point']:.1f}s/Punkt)")
+        
         # Zeige Aufgaben-Statistiken für den gewählten Punktebereich mit Round-Info
         if task_counts and point_range:
             min_points, max_points = point_range

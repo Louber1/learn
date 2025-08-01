@@ -64,9 +64,10 @@ def main():
         print("\n" + "="*50)
         if exam_info:
             print(f"Current Exam: {exam_info['name']}")
-        print("1. Aufgabe lösen")
-        print("2. Switch exam")
-        print("3. Beenden")
+        print("1. Aufgabe lösen (zufällig)")
+        print("2. Aufgabe mit längster Zeit/Punkt lösen")
+        print("3. Switch exam")
+        print("4. Beenden")
         
         choice = get_simple_input("\nWahl: ")
         
@@ -83,13 +84,26 @@ def main():
                     print("❌ Keine Aufgabe im gewählten Punktebereich gefunden!")
         
         elif choice == '2':
+            point_range = ui.get_point_range()
+            if point_range is not None:
+                min_points, max_points = point_range
+                task = task_service.get_task_with_longest_time_per_point(min_points, max_points)
+                if task is not None:
+                    print(f"\n🎯 Aufgabe mit längster Zeit pro Punkt ausgewählt!")
+                    # Hole Aufgaben-Statistiken für den gewählten Punktebereich
+                    task_counts = task_service.get_task_counts_by_point_range(min_points, max_points)
+                    ui.solve_task_interactive(task, task_counts, (min_points, max_points))
+                else:
+                    print("❌ Keine Aufgabe mit vorherigen Versuchen im gewählten Punktebereich gefunden!")
+        
+        elif choice == '3':
             # Switch exam
             new_exam_id = select_exam(task_service)
             task_service.set_exam_id(new_exam_id)
             exam_info = task_service.get_current_exam_info()
             print(f"✅ Switched to exam: {exam_info['name'] if exam_info else 'Unknown'}")
         
-        elif choice == '3':
+        elif choice == '4':
             print("👋 Auf Wiedersehen!")
             break
         

@@ -275,6 +275,74 @@ class TaskRepository:
             'current_round': min_completion_level + 1,  # Round is 1-based (0 times done = Round 1)
             'tasks_at_current_level': tasks_at_current_level
         }
+    
+    def get_task_with_longest_time_per_point(self, min_points: int, max_points: int) -> Optional[Dict]:
+        """Wählt die Aufgabe mit der längsten Zeit pro Punkt vom letzten Versuch"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # Query to find the task with the highest time per point from the last attempt
+        query = '''
+            WITH last_attempts AS (
+                SELECT 
+                    t.id as task_id,
+                    w.semester,
+                    w.sheet_number,
+                    t.task_number,
+                    t.total_points,
+                    t.times_done,
+                    sa.total_time_seconds,
+                    sa.attempt_date,
+                    ROW_NUMBER() OVER (PARTITION BY t.id ORDER BY sa.attempt_date DESC, sa.id DESC) as rn
+                FROM tasks t
+                JOIN worksheets w ON t.worksheet_id = w.id
+                JOIN solution_attempts sa ON t.id = sa.task_id
+                WHERE t.total_points >= ? AND t.total_points <= ?
+                    AND sa.status = 'completed'
+                    AND sa.total_time_seconds IS NOT NULL
+                    AND t.total_points > 0
+        '''
+        
+        params = [min_points, max_points]
+        if self.exam_id:
+            query += ' AND w.exam_id = ?'
+            params.append(self.exam_id)
+        
+        query += '''
+            )
+            SELECT 
+                task_id,
+                semester,
+                sheet_number,
+                task_number,
+                total_points,
+                times_done,
+                total_time_seconds,
+                (CAST(total_time_seconds AS FLOAT) / total_points) as time_per_point
+            FROM last_attempts
+            WHERE rn = 1
+            ORDER BY time_per_point DESC
+            LIMIT 1
+        '''
+        
+        cursor.execute(query, params)
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return None
+        
+        return {
+            'id': result[0],
+            'semester': result[1],
+            'sheet_number': result[2],
+            'task_number': result[3],
+            'total_points': result[4],
+            'times_done': result[5],
+            'is_repeat': result[5] > 0,
+            'last_time_seconds': result[6],
+            'time_per_point': result[7]
+        }
 
 
 class ExamRepository:

@@ -48,6 +48,10 @@ class TaskService:
         """Wählt zufällige Aufgabe im Punktebereich"""
         return self.task_repo.get_random_task(min_points, max_points)
     
+    def get_task_with_longest_time_per_point(self, min_points: int, max_points: int) -> Optional[Dict]:
+        """Wählt die Aufgabe mit der längsten Zeit pro Punkt vom letzten Versuch"""
+        return self.task_repo.get_task_with_longest_time_per_point(min_points, max_points)
+    
     def get_task_counts_by_point_range(self, min_points: int, max_points: int) -> Dict[str, int]:
         """Gibt Anzahl der Aufgaben im Punktebereich zurück"""
         return self.task_repo.get_task_counts_by_point_range(min_points, max_points)
