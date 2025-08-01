@@ -55,8 +55,6 @@ def main():
     print("=== Lernassistent ===")
     if exam_info:
         print(f"📋 Current Exam: {exam_info['name']}")
-        if exam_info['description']:
-            print(f"   Description: {exam_info['description']}")
     
     # Prüfe auf unterbrochene Sessions
     recovery_handled = ui.show_recovery_options()
